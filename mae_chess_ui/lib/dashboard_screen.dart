@@ -14,7 +14,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final ChessBoardController _controller = ChessBoardController();
   final MaeService _maeService = MaeService();
-  
+
   // State variables for our "Telemetry"
   MaeAnalysisResult? _currentAnalysis;
   bool _isLoading = false;
@@ -33,14 +33,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Get the FEN from the board controller
     String fen = _controller.getFen();
-    
+
     final result = await _maeService.analyzePosition(fen);
 
     if (mounted) {
       setState(() {
         _currentAnalysis = result;
         _isLoading = false;
-        
+
         // Draw the arrow if we have a best move
         _arrows.clear();
         if (result != null && result.bestMoveUci.isNotEmpty) {
@@ -55,7 +55,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // UCI is always 4 or 5 chars (e2e4 or e7e8q)
     String from = uci.substring(0, 2);
     String to = uci.substring(2, 4);
-    
+
     return BoardArrow(
       from: from,
       to: to,
@@ -80,7 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _controller.resetBoard();
               _analyzePosition();
             },
-          )
+          ),
         ],
       ),
       body: Padding(
@@ -89,7 +89,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             // 1. THE EVALUATION BAR (With Glow Logic)
             _buildEvalBar(),
-            
+
             const SizedBox(height: 20),
 
             // 2. THE CHESS BOARD
@@ -117,10 +117,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 20),
 
             // 4. THE MENTOR PANEL (Best Move & Explanation)
-            Expanded(
-              flex: 1,
-              child: _buildMentorPanel(),
-            ),
+            Expanded(flex: 1, child: _buildMentorPanel()),
           ],
         ),
       ),
@@ -134,8 +131,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // The Logic: If volatile (risky), glow Pink. If stable, glow Cyan.
     final barColor = isVolatile ? Colors.pink : Colors.cyan;
-    List<BoxShadow>? glow = isVolatile 
-        ? [BoxShadow(color: barColor.withValues(alpha: 0.6), blurRadius: 20, spreadRadius: 2)] 
+    List<BoxShadow>? glow = isVolatile
+        ? [
+            BoxShadow(
+              color: barColor.withValues(alpha: 0.6),
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ]
         : null;
 
     return Container(
@@ -149,10 +152,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         animation: true,
         animateFromLastPercent: true,
         center: Text(
-          _currentAnalysis == null 
-              ? "Initializing..." 
+          _currentAnalysis == null
+              ? "Initializing..."
               : "${(_currentAnalysis!.scoreCp / 100).toStringAsFixed(1)}",
-          style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 10,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -163,7 +170,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _navButton(Icons.first_page, () {
-          // Note: resetBoard clears history in some versions, 
+          // Note: resetBoard clears history in some versions,
           // usually we'd implement full history navigation here.
           // For MVP, reset is "First".
           _controller.resetBoard();
@@ -177,14 +184,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         FloatingActionButton(
           backgroundColor: Colors.cyan[300],
           onPressed: _analyzePosition,
-          child: _isLoading 
-            ? const CircularProgressIndicator(color: Colors.black) 
-            : const Icon(Icons.psychology, color: Colors.black),
+          child: _isLoading
+              ? const CircularProgressIndicator(color: Colors.black)
+              : const Icon(Icons.psychology, color: Colors.black),
         ),
-        // Forward button (Note: chess_board controller often doesn't support 'redo' easily 
+        // Forward button (Note: chess_board controller often doesn't support 'redo' easily
         // without custom history management. We keep it visual for now or for future PGN loading).
         _navButton(Icons.chevron_right, () {
-           // Placeholder for Redo logic
+          // Placeholder for Redo logic
         }),
         _navButton(Icons.last_page, () {}),
       ],
@@ -220,18 +227,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text(
                 "RECOMMENDATION: ",
                 style: TextStyle(
-                  color: Colors.grey[400], 
-                  fontWeight: FontWeight.bold, 
-                  fontSize: 12
+                  color: Colors.grey[400],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
               Text(
                 _currentAnalysis!.bestMoveUci.toUpperCase(),
                 style: const TextStyle(
-                  color: Colors.cyan, 
-                  fontWeight: FontWeight.bold, 
+                  color: Colors.cyan,
+                  fontWeight: FontWeight.bold,
                   fontSize: 14,
-                  fontFamily: 'Courier' // Monospace for moves
+                  fontFamily: 'Courier', // Monospace for moves
                 ),
               ),
             ],
@@ -242,9 +249,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Text(
                 _currentAnalysis!.explanation,
                 style: const TextStyle(
-                  color: Colors.white, 
-                  fontSize: 16, 
-                  height: 1.4
+                  color: Colors.white,
+                  fontSize: 16,
+                  height: 1.4,
                 ),
               ),
             ),
