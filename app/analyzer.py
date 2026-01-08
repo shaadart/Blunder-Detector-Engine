@@ -1,14 +1,19 @@
 import chess
 import chess.engine
+import chess.pgn
 import math
 import networkx as nx
-import numpy as np
-from .models import EvalBarData, SuggestionArrow, BestLineData, AnalysisResponse, TelemetryData
+import io
+import statistics
+from .models import (
+    EvalBarData, SuggestionArrow, BestLineData, 
+    AnalysisResponse, TelemetryData, GameProfile
+)
 
 # CONFIGURATION
 STOCKFISH_PATH = "/usr/local/bin/stockfish"
-ANALYSIS_DEPTH = 22
-MULTIPV = 7
+ANALYSIS_DEPTH = 18 
+MULTIPV = 5 
 ENGINE_THREADS = 4
 ENGINE_HASH = 2048
 
@@ -20,128 +25,156 @@ class MAEAnalyzer:
         return 1 / (1 + math.exp(-0.004 * cp))
 
     def _calculate_graph_fragility(self, board: chess.Board) -> float:
-        """
-        Builds an Interaction Graph of the board.
-        Returns a 'Fragility Score' (0.0 to 1.0).
-        High Score = High Fragility (Low Algebraic Connectivity).
-        """
         G = nx.Graph()
-        
-        # 1. Add Nodes (Pieces)
         piece_map = board.piece_map()
         for square in piece_map:
             G.add_node(square)
 
-        # 2. Add Edges (Attacks and Defenses)
         for square, piece in piece_map.items():
-            # Incoming tension
             attackers = board.attackers(not piece.color, square)
-            for attacker_sq in attackers:
-                G.add_edge(square, attacker_sq)
-            
-            # Structural integrity
+            for attacker_sq in attackers: G.add_edge(square, attacker_sq)
             defenders = board.attackers(piece.color, square)
-            for defender_sq in defenders:
-                G.add_edge(square, defender_sq)
+            for defender_sq in defenders: G.add_edge(square, defender_sq)
 
-        # 3. Calculate Algebraic Connectivity
-        if G.number_of_nodes() < 2:
-            return 0.0
-
+        if G.number_of_nodes() < 2: return 0.0
         try:
-            algebraic_connectivity = nx.algebraic_connectivity(G, method='lanczos')
-            # Normalize: Low Connectivity = High Fragility
-            fragility = max(0.0, 1.0 - (algebraic_connectivity / 4.0))
-            return min(1.0, fragility)
-        except Exception:
+            ac = nx.algebraic_connectivity(G, method='lanczos')
+            return max(0.0, min(1.0, 1.0 - (ac / 4.0)))
+        except:
             return 0.5
 
-    async def analyze_fen(self, fen: str) -> AnalysisResponse:
+    async def analyze_fen(self, fen: str, depth=ANALYSIS_DEPTH, multipv=MULTIPV) -> AnalysisResponse:
         board = chess.Board(fen)
-        
+        return await self._analyze_board_instance(board, depth, multipv)
+
+    async def _analyze_board_instance(self, board: chess.Board, depth, multipv) -> AnalysisResponse:
         transport, engine = await chess.engine.popen_uci(self.engine_path)
-        await engine.configure({
-            "Threads": ENGINE_THREADS,
-            "Hash": ENGINE_HASH, 
-            "Skill Level": 20
-        })
+        await engine.configure({"Threads": ENGINE_THREADS, "Hash": ENGINE_HASH})
 
         try:
-            # --- 1. Graph Analysis ---
             fragility_score = self._calculate_graph_fragility(board)
-
-            # --- 2. Engine Analysis ---
-            info = await engine.analyse(
-                board, 
-                chess.engine.Limit(depth=ANALYSIS_DEPTH), 
-                multipv=MULTIPV
-            )
+            info = await engine.analyse(board, chess.engine.Limit(depth=depth), multipv=multipv)
 
             if not info: raise ValueError("Analysis failed")
 
             top_line = info[0]
             best_score_obj = top_line["score"].white()
             
+            # 1. ROBUST SCORING (Handles Mate)
             if best_score_obj.is_mate():
                 score_cp = 9999 if best_score_obj.mate() > 0 else -9999
             else:
                 score_cp = best_score_obj.score()
+                if score_cp is None: score_cp = 0 
 
-            # --- 3. Hybrid Volatility Logic ---
-            scores = []
-            for line in info:
-                s = line["score"].white()
-                scores.append(s.score() if not s.is_mate() else (2000 if s.mate() > 0 else -2000))
-            
+            # 2. ROBUST VOLATILITY
+            scores = [l["score"].white().score(mate_score=2000) for l in info]
             engine_confusion = False
+            chaos_score = 0.0
             if len(scores) >= 3:
-                gap_1_to_3 = abs(scores[0] - scores[2])
-                if gap_1_to_3 < 35: engine_confusion = True
+                gap = abs(scores[0] - scores[2])
+                engine_confusion = gap < 35
+                chaos_score = max(0.0, 1.0 - (gap / 50.0))
 
             is_volatile = engine_confusion or (fragility_score > 0.65)
-
-            # --- 4. Explanation Generation ---
-            pv_moves = []
-            temp_board = board.copy()
-            for move in top_line['pv'][:5]:
-                pv_moves.append(temp_board.san(move))
-                temp_board.push(move)
             
-            explanation = "Position is solid."
-            if is_volatile:
-                if engine_confusion:
-                    explanation = "Tactical chaos. Multiple moves have similar evaluations."
-                elif fragility_score > 0.65:
-                    explanation = f"High Structural Fragility ({fragility_score:.2f}). One mistake could collapse the defense."
-            elif abs(score_cp) > 100:
-                explanation = "One side has a decisive material or positional advantage."
+            # 3. EXPLANATION
+            explanation = "Balanced."
+            if best_score_obj.is_mate():
+                explanation = "Checkmate sequence found!"
+            elif is_volatile: 
+                explanation = "High complexity. Tactical precision required."
+            elif abs(score_cp) > 150: 
+                explanation = "Decisive advantage."
 
-            # --- 5. CALCULATE CHAOS SCORE (This was missing) ---
-            if len(scores) >= 3:
-                gap_val = abs(scores[0] - scores[2])
-                # Normalize: 0 gap = 1.0 chaos, 50+ gap = 0.0 chaos
-                chaos_score = max(0.0, 1.0 - (gap_val / 50.0))
+            # 4. ROBUST PV (The Fix for 'KeyError: pv')
+            pv_moves = []
+            arrows = []
+            
+            # Only try to get moves if the engine returned a variation
+            if "pv" in top_line and len(top_line["pv"]) > 0:
+                temp_board = board.copy()
+                for move in top_line['pv'][:4]:
+                    pv_moves.append(temp_board.san(move))
+                    temp_board.push(move)
+                
+                # Add the arrow
+                arrows.append(SuggestionArrow(move_uci=top_line["pv"][0].uci(), type="engine"))
             else:
-                chaos_score = 0.0
+                # If no PV (e.g. game over), just show empty string
+                pv_moves = ["(Game Over)"]
 
             return AnalysisResponse(
-                fen=fen,
+                fen=board.fen(),
+                move_number=board.fullmove_number,
                 eval_bar=EvalBarData(
                     score_cp=score_cp,
-                    winning_chance=self._cp_to_win_chance(score_cp) if abs(score_cp) < 9000 else (1.0 if score_cp > 0 else 0.0),
+                    winning_chance=self._cp_to_win_chance(score_cp),
                     is_volatile=is_volatile
                 ),
                 telemetry=TelemetryData(
                     objective_score=self._cp_to_win_chance(score_cp),
                     fragility_score=fragility_score,
-                    chaos_score=chaos_score # Now this variable exists!
+                    chaos_score=chaos_score
                 ),
-                arrows=[SuggestionArrow(move_uci=top_line["pv"][0].uci(), type="engine")],
-                best_line=BestLineData(
-                    truncated_line=" ".join(pv_moves) + "...",
-                    explanation=explanation
-                )
+                arrows=arrows,
+                best_line=BestLineData(truncated_line=" ".join(pv_moves), explanation=explanation)
             )
-
         finally:
             await engine.quit()
+
+    async def analyze_game_pgn(self, pgn_str: str) -> GameProfile:
+        pgn = io.StringIO(pgn_str)
+        game = chess.pgn.read_game(pgn)
+        
+        # If PGN is invalid/empty
+        if game is None:
+             raise ValueError("Could not parse PGN")
+
+        board = game.board()
+        
+        analyzed_moves = []
+        fragility_history = []
+        chaos_history = []
+        blunder_count = 0
+        prev_score = 0
+
+        for move in game.mainline_moves():
+            board.push(move)
+            # Analyze
+            result = await self._analyze_board_instance(board, depth=16, multipv=3)
+            analyzed_moves.append(result)
+            
+            # Stats
+            fragility_history.append(result.telemetry.fragility_score)
+            chaos_history.append(result.telemetry.chaos_score)
+            
+            current_score = result.eval_bar.score_cp
+            # Simple Blunder Check
+            if abs(current_score - prev_score) > 200: 
+                blunder_count += 1
+            prev_score = current_score
+
+        avg_frag = statistics.mean(fragility_history) if fragility_history else 0
+        avg_chaos = statistics.mean(chaos_history) if chaos_history else 0
+
+        player_type = "Balanced Strategist"
+        if avg_chaos > 0.4 and avg_frag > 0.5:
+            player_type = "Risk Master"
+        elif avg_frag < 0.3:
+            player_type = "Solid Defender"
+        elif blunder_count > 3:
+            player_type = "Tactical Gambler"
+
+        base_score = 100 - (blunder_count * 10)
+        chaos_bonus = avg_chaos * 10
+        mastery = int(max(0, min(100, base_score + chaos_bonus)))
+
+        return GameProfile(
+            mastery_score=mastery,
+            player_type=player_type,
+            avg_fragility=avg_frag,
+            avg_chaos=avg_chaos,
+            blunder_count=blunder_count,
+            moves_analysis=analyzed_moves
+        )

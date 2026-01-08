@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from .models import PositionRequest, AnalysisResponse
+from .models import PositionRequest, GameRequest, AnalysisResponse, GameProfile
 from .analyzer import MAEAnalyzer
 
 app = FastAPI(title="MAE Chess Backend")
 
-# Allow Flutter frontend (Web/Android emulators) to connect
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,19 +21,21 @@ def health_check():
 
 @app.post("/analyze", response_model=AnalysisResponse)
 async def analyze_position(request: PositionRequest):
+    try:
+        if len(request.fen.split()) < 4:
+             raise HTTPException(status_code=400, detail="Invalid FEN")
+        return await analyzer.analyze_fen(request.fen)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- NEW ENDPOINT ---
+@app.post("/analyze/game", response_model=GameProfile)
+async def analyze_game(request: GameRequest):
     """
-    Takes a FEN string, runs Stockfish analysis, and returns 
-    data structured for the MAE Simple UI components.
+    Analyzes a full PGN. Returns a GameProfile with Mastery Score and per-move analysis.
     """
     try:
-        # Basic FEN validation check
-        if len(request.fen.split()) < 4:
-             raise HTTPException(status_code=400, detail="Invalid FEN string format")
-             
-        result = await analyzer.analyze_fen(request.fen)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return await analyzer.analyze_game_pgn(request.pgn)
     except Exception as e:
-        print(f"Error during analysis: {e}")
-        raise HTTPException(status_code=500, detail="Internal analysis error")
+        print(f"Game Analysis Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Game analysis failed: {str(e)}")
