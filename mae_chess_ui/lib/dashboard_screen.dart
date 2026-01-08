@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_chess_board/flutter_chess_board.dart';
+import 'package:mae_chess_ui/radar_chart_widget.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'mae_service.dart';
 
@@ -206,62 +207,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildMentorPanel() {
+Widget _buildMentorPanel() {
     if (_currentAnalysis == null) {
-      return const Center(child: Text("Waiting for telemetry..."));
+      return const Center(child: Text("Waiting for telemetry...", style: TextStyle(color: Colors.white54)));
     }
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
+        color: Colors.redAccent,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white10),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Text(
-                "RECOMMENDATION: ",
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                _currentAnalysis!.bestMoveUci.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.cyan,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  fontFamily: 'Courier', // Monospace for moves
-                ),
-              ),
-            ],
+          // LEFT SIDE: The Radar Chart (Visual Data)
+          MaeRadarChart(
+            objective: _currentAnalysis!.winningChance,
+            fragility: _currentAnalysis!.fragility,
+            chaos: _currentAnalysis!.chaos,
           ),
-          const SizedBox(height: 8),
+          
+          const SizedBox(width: 16),
+          
+          // RIGHT SIDE: The Text (Explanation)
           Expanded(
-            child: SingleChildScrollView(
-              child: Text(
-                _currentAnalysis!.explanation,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  height: 1.4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      "RECOMMENDATION: ",
+                      style: TextStyle(
+                        color: Colors.grey[400], 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 10
+                      ),
+                    ),
+                    Text(
+                      _currentAnalysis!.bestMoveUci.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.pinkAccent, 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 14,
+                        fontFamily: 'Courier'
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _currentAnalysis!.explanation,
+                      style: const TextStyle(
+                        color: Colors.white, 
+                        fontSize: 13, 
+                        height: 1.4
+                      ),
+                    ),
+                  ),
+                ),
+                // Show the raw metrics for debugging/trust
+                const SizedBox(height: 4),
+                Text(
+                  "Fragility: ${(_currentAnalysis!.fragility * 100).toInt()}% | Chaos: ${(_currentAnalysis!.chaos * 100).toInt()}%",
+                  style: TextStyle(color: Colors.grey[700], fontSize: 10),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "Line: ${_currentAnalysis!.bestLine}",
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
           ),
         ],
       ),

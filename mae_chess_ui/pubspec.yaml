@@ -46,6 +46,8 @@ dependencies:
   # For clean icons
   cupertino_icons: 
 
+  fl_chart:
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

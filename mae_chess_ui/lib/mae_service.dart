@@ -7,6 +7,10 @@ class MaeAnalysisResult {
   final int scoreCp;
   final double winningChance;
   final bool isVolatile;
+  // NEW FIELDS
+  final double fragility; 
+  final double chaos;
+
   final String bestMoveUci;
   final String bestLine;
   final String explanation;
@@ -15,6 +19,8 @@ class MaeAnalysisResult {
     required this.scoreCp,
     required this.winningChance,
     required this.isVolatile,
+    required this.fragility, // New
+    required this.chaos,     // New
     required this.bestMoveUci,
     required this.bestLine,
     required this.explanation,
@@ -25,6 +31,10 @@ class MaeAnalysisResult {
       scoreCp: json['eval_bar']['score_cp'],
       winningChance: json['eval_bar']['winning_chance'],
       isVolatile: json['eval_bar']['is_volatile'],
+      // Parse new Telemetry block
+      fragility: json['telemetry']['fragility_score']?.toDouble() ?? 0.0,
+      chaos: json['telemetry']['chaos_score']?.toDouble() ?? 0.0,
+      
       bestMoveUci: json['arrows'][0]['move_uci'],
       bestLine: json['best_line']['truncated_line'],
       explanation: json['best_line']['explanation'],
