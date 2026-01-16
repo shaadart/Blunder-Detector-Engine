@@ -6,77 +6,77 @@ import 'package:http/http.dart' as http;
 // --- DATA MODELS ---
 
 class MaeGameProfile {
-  final int masteryScore;
-  final String playerType;
-  final double avgFragility;
-  final double avgChaos;
+  final int blunderCount;
+  final int avgDifficulty; // New Metric (0-100)
+  final int pushups;       // New Metric
+  final String playerType; // Derived helper
   final List<MaeAnalysisResult> moves;
 
   MaeGameProfile({
-    required this.masteryScore,
+    required this.blunderCount,
+    required this.avgDifficulty,
+    required this.pushups,
     required this.playerType,
-    required this.avgFragility,
-    required this.avgChaos,
     required this.moves,
   });
 
   factory MaeGameProfile.fromJson(Map<String, dynamic> json) {
-    var list = json['moves_analysis'] as List;
+    var list = json['moves'] as List;
     List<MaeAnalysisResult> movesList = list.map((i) => MaeAnalysisResult.fromJson(i)).toList();
+    
+    var stats = json['stats'];
+
+    // Derive a "Player Type" based on the stats
+    String type = "Balanced";
+    int avgDiff = stats['avg_difficulty'];
+    if (avgDiff > 60) type = "Grandmaster Grinder"; // High difficulty tolerance
+    else if (avgDiff < 20) type = "Solid / Passive";
+    else type = "Tactical Human";
 
     return MaeGameProfile(
-      masteryScore: json['mastery_score'],
-      playerType: json['player_type'],
-      avgFragility: json['avg_fragility']?.toDouble() ?? 0.0,
-      avgChaos: json['avg_chaos']?.toDouble() ?? 0.0,
+      blunderCount: stats['blunders'],
+      avgDifficulty: avgDiff,
+      pushups: stats['pushups'],
+      playerType: type,
       moves: movesList,
     );
   }
 }
 
 class MaeAnalysisResult {
-  final String fen;
   final int moveNumber;
-  final int scoreCp;
-  final double winningChance;
-  final bool isVolatile;
-  final double fragility;
-  final double chaos;
-  final String bestMoveUci;
-  final String bestLine;
-  final String explanation;
+  final String moveUci;
+  final String label;          // e.g. "Pragmatic Simplification"
+  final String evalDisplay;    // e.g. "+1.50" or "#3"
+  final double winChance;      // 0-100
+  final int difficulty;        // 0-100 (PDI)
+  final int risk;              // 0-100 (RVS)
+  final double delta;          // Regret
+  final String? bestMove;
 
   MaeAnalysisResult({
-    required this.fen,
     required this.moveNumber,
-    required this.scoreCp,
-    required this.winningChance,
-    required this.isVolatile,
-    required this.fragility,
-    required this.chaos,
-    required this.bestMoveUci,
-    required this.bestLine,
-    required this.explanation,
+    required this.moveUci,
+    required this.label,
+    required this.evalDisplay,
+    required this.winChance,
+    required this.difficulty,
+    required this.risk,
+    required this.delta,
+    this.bestMove,
   });
 
   factory MaeAnalysisResult.fromJson(Map<String, dynamic> json) {
-    // Handle Arrows carefully (might be empty on game over)
-    String moveUci = "";
-    if (json['arrows'] != null && (json['arrows'] as List).isNotEmpty) {
-      moveUci = json['arrows'][0]['move_uci'];
-    }
-
     return MaeAnalysisResult(
-      fen: json['fen'],
-      moveNumber: json['move_number'] ?? 0,
-      scoreCp: json['eval_bar']['score_cp'],
-      winningChance: json['eval_bar']['winning_chance'],
-      isVolatile: json['eval_bar']['is_volatile'],
-      fragility: json['telemetry']['fragility_score']?.toDouble() ?? 0.0,
-      chaos: json['telemetry']['chaos_score']?.toDouble() ?? 0.0,
-      bestMoveUci: moveUci,
-      bestLine: json['best_line']['truncated_line'],
-      explanation: json['best_line']['explanation'],
+      moveNumber: json['move_number'],
+      moveUci: json['move_uci'],
+      label: json['label'],
+      evalDisplay: json['eval_display'],
+      winChance: (json['win_chance'] as num).toDouble(),
+      difficulty: json['difficulty'],
+      risk: json['risk'],
+      delta: (json['delta'] as num).toDouble(),
+      bestMove: json['best_move'],
     );
   }
 }
@@ -84,38 +84,22 @@ class MaeAnalysisResult {
 // --- SERVICE ---
 
 class MaeService {
+  // Update this to your machine's IP if testing on real device
   String get _baseUrl {
     if (kIsWeb) return "http://localhost:8000";
-    if (Platform.isAndroid) return "http://10.0.2.2:8000";
+    if (Platform.isAndroid) return "http://10.0.2.2:8000"; 
     return "http://localhost:8000";
   }
 
-  // Analyze Single Position (Legacy support)
-  Future<MaeAnalysisResult?> analyzePosition(String fen) async {
+  Future<MaeGameProfile?> analyzeGame(String pgn, String username) async {
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/analyze'),
+        Uri.parse('$_baseUrl/analyze-game'), // Updated Endpoint
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"fen": fen}),
-      );
-
-      if (response.statusCode == 200) {
-        // Wrap single response to match structure if needed, or just parse
-        return MaeAnalysisResult.fromJson(jsonDecode(response.body));
-      }
-    } catch (e) {
-      print("Error: $e");
-    }
-    return null;
-  }
-
-  // Analyze Full Game (NEW)
-  Future<MaeGameProfile?> analyzeGame(String pgn) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/analyze/game'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"pgn": pgn}),
+        body: jsonEncode({
+          "pgn": pgn,
+          "username": username
+        }),
       );
 
       if (response.statusCode == 200) {

@@ -1,180 +1,279 @@
 import chess
-import chess.engine
 import chess.pgn
-import math
-import networkx as nx
 import io
-import statistics
-from .models import (
-    EvalBarData, SuggestionArrow, BestLineData, 
-    AnalysisResponse, TelemetryData, GameProfile
+import numpy as np
+import networkx as nx
+import math
+from stockfish import Stockfish
+
+# ─────────────────────────────────────────────────────────────
+# CONFIGURATION
+# ─────────────────────────────────────────────────────────────
+STOCKFISH_PATH = "/usr/local/bin/stockfish" 
+
+stockfish = Stockfish(
+    path=STOCKFISH_PATH,
+    depth=18,
+    parameters={
+        "Threads": 4,
+        "Hash": 1024,
+        "MultiPV": 3,
+        "Skill Level": 20,
+    },
 )
 
-# CONFIGURATION
-STOCKFISH_PATH = "/usr/local/bin/stockfish"
-ANALYSIS_DEPTH = 18 
-MULTIPV = 5 
-ENGINE_THREADS = 4
-ENGINE_HASH = 2048
+_CACHE = {}
 
-class MAEAnalyzer:
-    def __init__(self):
-        self.engine_path = STOCKFISH_PATH
+# ─────────────────────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────────────────────
 
-    def _cp_to_win_chance(self, cp: int) -> float:
-        return 1 / (1 + math.exp(-0.004 * cp))
+def parse_eval(eval_dict: dict) -> int:
+    typ = eval_dict["type"]
+    val = eval_dict["value"]
+    if typ == "mate":
+        return 10000 * val if val > 0 else -10000 * abs(val) 
+    return val
 
-    def _calculate_graph_fragility(self, board: chess.Board) -> float:
-        G = nx.Graph()
-        piece_map = board.piece_map()
-        for square in piece_map:
-            G.add_node(square)
+def get_cp_mate(top_move: dict) -> int:
+    mate = top_move.get("Mate")
+    if mate is not None:
+        return 10000 * mate if mate > 0 else -10000 * abs(mate)
+    return top_move.get("Centipawn", 0)
 
-        for square, piece in piece_map.items():
-            attackers = board.attackers(not piece.color, square)
-            for attacker_sq in attackers: G.add_edge(square, attacker_sq)
-            defenders = board.attackers(piece.color, square)
-            for defender_sq in defenders: G.add_edge(square, defender_sq)
+def format_eval(val: int) -> str:
+    if abs(val) > 9000:
+        mate_in = math.ceil((10000 - abs(val)) / 2) if val > 0 else -math.ceil((10000 - abs(val)) / 2)
+        return f"#{mate_in}"
+    return f"{val / 100:+.2f}"
 
-        if G.number_of_nodes() < 2: return 0.0
+def cp_to_winprob(cp: float) -> float:
+    cp = max(-1000, min(1000, cp)) 
+    return 100 / (1 + math.exp(-0.00368208 * cp))
+
+def normalize(cp: int, is_white: bool) -> int:
+    return cp if is_white else -cp
+
+# ─────────────────────────────────────────────────────────────
+# AXIS 2: FRAGILITY (Complexity)
+# ─────────────────────────────────────────────────────────────
+def compute_fragility(board: chess.Board) -> float:
+    if board.is_game_over(): return 0.0
+    G = nx.Graph()
+    pieces = board.piece_map()
+    white_sq = [sq for sq, p in pieces.items() if p.color == chess.WHITE]
+    black_sq = [sq for sq, p in pieces.items() if p.color == chess.BLACK]
+    if not white_sq or not black_sq: return 0.0
+    
+    G.add_nodes_from(white_sq, bipartite=0)
+    G.add_nodes_from(black_sq, bipartite=1)
+
+    for sq in pieces:
+        attacks = board.attacks(sq)
+        attacker_color = board.color_at(sq)
+        for target in attacks:
+            if board.piece_at(target) and board.color_at(target) != attacker_color:
+                G.add_edge(sq, target)
+
+    if G.number_of_edges() == 0: return 0.0
+    degrees = dict(G.degree())
+    total_degree = sum(degrees.values())
+    if total_degree == 0: return 0.0
+    return min(1.0, (total_degree / G.number_of_nodes()) / 4.0)
+
+# ─────────────────────────────────────────────────────────────
+# CORE ANALYSIS
+# ─────────────────────────────────────────────────────────────
+def compute_position_metrics(board: chess.Board, player_is_white: bool) -> dict:
+    fen = board.fen()
+    if fen in _CACHE: return _CACHE[fen]
+
+    stockfish.set_fen_position(fen)
+    
+    # Static Eval
+    current_eval_dict = stockfish.get_evaluation()
+    current_eval_raw = parse_eval(current_eval_dict)
+    current_eval_norm = normalize(current_eval_raw, player_is_white)
+
+    # MultiPV (Top Lines)
+    top_moves = stockfish.get_top_moves(3)
+    if not top_moves: return {} 
+
+    # Extract Metrics
+    after_evals_raw = [get_cp_mate(tm) for tm in top_moves]
+    after_evals_norm = [normalize(e, player_is_white) for e in after_evals_raw]
+    
+    best_eval = after_evals_norm[0]
+    best_move_uci = top_moves[0]["Move"]
+
+    # ---------------------------------------------------------
+    # FEATURE 3: Generate the "Best Line" (SAN variation)
+    # ---------------------------------------------------------
+    pv_uci = top_moves[0].get("PV", [])
+    pv_san = []
+    temp_board = board.copy()
+    for m_uci in pv_uci[:6]: # Show next 6 moves
         try:
-            ac = nx.algebraic_connectivity(G, method='lanczos')
-            return max(0.0, min(1.0, 1.0 - (ac / 4.0)))
+            m = chess.Move.from_uci(m_uci)
+            pv_san.append(temp_board.san(m))
+            temp_board.push(m)
         except:
-            return 0.5
+            break
+    best_line_str = " ".join(pv_san)
+    # ---------------------------------------------------------
 
-    async def analyze_fen(self, fen: str, depth=ANALYSIS_DEPTH, multipv=MULTIPV) -> AnalysisResponse:
-        board = chess.Board(fen)
-        return await self._analyze_board_instance(board, depth, multipv)
+    variance = np.var(after_evals_norm) if len(after_evals_norm) > 1 else 0
+    fragility = compute_fragility(board)
+    
+    legal_moves = list(board.legal_moves)
+    complexity_penalty = math.log2(len(legal_moves)) / 10.0 if legal_moves else 0
 
-    async def _analyze_board_instance(self, board: chess.Board, depth, multipv) -> AnalysisResponse:
-        transport, engine = await chess.engine.popen_uci(self.engine_path)
-        await engine.configure({"Threads": ENGINE_THREADS, "Hash": ENGINE_HASH})
+    pdi = 0.4 * (math.sqrt(variance) / 500) + 0.4 * fragility + 0.2 * complexity_penalty
+    rvs = 0.5 * (math.sqrt(variance) / 300) + 0.3 * fragility + 0.2 * complexity_penalty # Simpler RVS approximation
 
-        try:
-            fragility_score = self._calculate_graph_fragility(board)
-            info = await engine.analyse(board, chess.engine.Limit(depth=depth), multipv=multipv)
+    metrics = {
+        "eval_raw": current_eval_norm,
+        "best_eval_raw": best_eval,
+        "best_move": best_move_uci,
+        "best_line": best_line_str, # <--- NEW FIELD
+        "curr_winprob": cp_to_winprob(current_eval_norm),
+        "best_winprob": cp_to_winprob(best_eval),
+        "pdi": np.clip(pdi, 0.0, 1.0),
+        "rvs": np.clip(rvs, 0.0, 1.0),
+        "eval_str": format_eval(current_eval_raw),
+    }
+    
+    _CACHE[fen] = metrics
+    return metrics
 
-            if not info: raise ValueError("Analysis failed")
+def detect_intent(pre_board: chess.Board, move: chess.Move, post_board: chess.Board, pre_eval: int) -> str:
+    captured = pre_board.piece_at(move.to_square) is not None
+    check = post_board.is_check()
+    pre_pieces = len(pre_board.piece_map())
+    post_pieces = len(post_board.piece_map())
+    
+    if pre_eval > 300 and post_pieces < pre_pieces: return "simplification"
+    if captured and abs(pre_eval) < 200: return "gambit"
+    if pre_eval < -300 and (check or captured): return "swindle"
+    return "standard"
 
-            top_line = info[0]
-            best_score_obj = top_line["score"].white()
-            
-            # 1. ROBUST SCORING (Handles Mate)
-            if best_score_obj.is_mate():
-                score_cp = 9999 if best_score_obj.mate() > 0 else -9999
-            else:
-                score_cp = best_score_obj.score()
-                if score_cp is None: score_cp = 0 
+def classify_move(delta_winprob: float, rvs: float, intent: str, is_opening: bool) -> str:
+    regret = -delta_winprob 
+    
+    if is_opening:
+        if regret > 25: return "Opening Blunder"
+        if regret > 10: return "Dubious Opening"
+        return "Book/Standard"
 
-            # 2. ROBUST VOLATILITY
-            scores = [l["score"].white().score(mate_score=2000) for l in info]
-            engine_confusion = False
-            chaos_score = 0.0
-            if len(scores) >= 3:
-                gap = abs(scores[0] - scores[2])
-                engine_confusion = gap < 35
-                chaos_score = max(0.0, 1.0 - (gap / 50.0))
-
-            is_volatile = engine_confusion or (fragility_score > 0.65)
-            
-            # 3. EXPLANATION
-            explanation = "Balanced."
-            if best_score_obj.is_mate():
-                explanation = "Checkmate sequence found!"
-            elif is_volatile: 
-                explanation = "High complexity. Tactical precision required."
-            elif abs(score_cp) > 150: 
-                explanation = "Decisive advantage."
-
-            # 4. ROBUST PV (The Fix for 'KeyError: pv')
-            pv_moves = []
-            arrows = []
-            
-            # Only try to get moves if the engine returned a variation
-            if "pv" in top_line and len(top_line["pv"]) > 0:
-                temp_board = board.copy()
-                for move in top_line['pv'][:4]:
-                    pv_moves.append(temp_board.san(move))
-                    temp_board.push(move)
-                
-                # Add the arrow
-                arrows.append(SuggestionArrow(move_uci=top_line["pv"][0].uci(), type="engine"))
-            else:
-                # If no PV (e.g. game over), just show empty string
-                pv_moves = ["(Game Over)"]
-
-            return AnalysisResponse(
-                fen=board.fen(),
-                move_number=board.fullmove_number,
-                eval_bar=EvalBarData(
-                    score_cp=score_cp,
-                    winning_chance=self._cp_to_win_chance(score_cp),
-                    is_volatile=is_volatile
-                ),
-                telemetry=TelemetryData(
-                    objective_score=self._cp_to_win_chance(score_cp),
-                    fragility_score=fragility_score,
-                    chaos_score=chaos_score
-                ),
-                arrows=arrows,
-                best_line=BestLineData(truncated_line=" ".join(pv_moves), explanation=explanation)
-            )
-        finally:
-            await engine.quit()
-
-    async def analyze_game_pgn(self, pgn_str: str) -> GameProfile:
-        pgn = io.StringIO(pgn_str)
-        game = chess.pgn.read_game(pgn)
+    if regret > 20:
+        if intent == "swindle": return "Desperate Complication"
+        return "Blunder (Outcome Changed)"
         
-        # If PGN is invalid/empty
-        if game is None:
-             raise ValueError("Could not parse PGN")
-
-        board = game.board()
+    if regret > 10:
+        if intent == "simplification": return "Pragmatic Simplification"
+        if rvs > 0.7: return "Speculative / Risky"
+        return "Mistake"
         
-        analyzed_moves = []
-        fragility_history = []
-        chaos_history = []
-        blunder_count = 0
-        prev_score = 0
+    if regret > 3:
+        if intent == "simplification": return "Good Simplification"
+        return "Inaccuracy"
 
-        for move in game.mainline_moves():
+    return "Best / Excellent"
+
+# ─────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────
+def analyze_pgn(pgn_str: str, username: str = None) -> dict:
+    game = chess.pgn.read_game(io.StringIO(pgn_str))
+    if not game: raise ValueError("Invalid PGN")
+
+    headers = game.headers
+    user = username.strip().lower() if username else "hero"
+    white = headers.get("White", "").lower()
+    black = headers.get("Black", "").lower()
+    
+    if user in white:
+        player_is_white = True
+        player_name = headers.get("White")
+        opp_name = headers.get("Black")
+    elif user in black:
+        player_is_white = False
+        player_name = headers.get("Black")
+        opp_name = headers.get("White")
+    else:
+        player_is_white = True 
+        player_name = headers.get("White")
+        opp_name = headers.get("Black")
+
+    board = game.board()
+    analysis_details = []
+    blunder_count = 0
+    sum_difficulty = 0
+    move_count = 0
+
+    for ply, move in enumerate(game.mainline_moves()):
+        is_player_move = ((ply % 2 == 0 and player_is_white) or (ply % 2 == 1 and not player_is_white))
+        
+        if not is_player_move:
             board.push(move)
-            # Analyze
-            result = await self._analyze_board_instance(board, depth=16, multipv=3)
-            analyzed_moves.append(result)
+            continue
             
-            # Stats
-            fragility_history.append(result.telemetry.fragility_score)
-            chaos_history.append(result.telemetry.chaos_score)
-            
-            current_score = result.eval_bar.score_cp
-            # Simple Blunder Check
-            if abs(current_score - prev_score) > 200: 
-                blunder_count += 1
-            prev_score = current_score
+        pre_metrics = compute_position_metrics(board, player_is_white)
+        pre_board = board.copy()
+        board.push(move)
+        post_metrics = compute_position_metrics(board, player_is_white)
+        
+        delta_winprob = post_metrics["curr_winprob"] - pre_metrics["best_winprob"]
+        intent = detect_intent(pre_board, move, board, pre_metrics["best_eval_raw"])
+        is_opening = (ply // 2) < 6
+        
+        label = classify_move(delta_winprob, pre_metrics["rvs"], intent, is_opening)
+        
+        if "Blunder" in label or "Mistake" in label:
+            blunder_count += 1
 
-        avg_frag = statistics.mean(fragility_history) if fragility_history else 0
-        avg_chaos = statistics.mean(chaos_history) if chaos_history else 0
+        # ---------------------------------------------------------
+        # FEATURE 1 & 2: Better Best Move Logic
+        # ---------------------------------------------------------
+        
+        # 1. Always show the engine's move initially
+        engine_best = pre_metrics["best_move"]
+        
+        # 2. If you played Excellent, don't confuse user with an alternative
+        if "Best" in label or "Excellent" in label or "Standard" in label:
+             # Just show what they played, so UI doesn't say "Best move was X" when they played Y
+            engine_best = move.uci()
+        
+        # 3. If it IS a mistake, ensure we actually have the suggestion
+        elif engine_best is None:
+             # Should practically never happen with MultiPV=3
+             engine_best = "Unknown"
 
-        player_type = "Balanced Strategist"
-        if avg_chaos > 0.4 and avg_frag > 0.5:
-            player_type = "Risk Master"
-        elif avg_frag < 0.3:
-            player_type = "Solid Defender"
-        elif blunder_count > 3:
-            player_type = "Tactical Gambler"
+        analysis_details.append({
+            "move_number": (ply // 2) + 1,
+            "move_uci": move.uci(),
+            "label": label,
+            "win_chance": round(post_metrics["curr_winprob"], 1),
+            "delta": round(delta_winprob, 1),
+            "difficulty": round(pre_metrics["pdi"] * 100),
+            "risk": round(pre_metrics["rvs"] * 100),
+            "best_move": engine_best,           # Now reliable
+            "best_line": pre_metrics["best_line"], # The Variation (e.g. "Nf3 e5 d4")
+            "eval_display": post_metrics["eval_str"]
+        })
+        
+        move_count += 1
+        sum_difficulty += pre_metrics["pdi"]
 
-        base_score = 100 - (blunder_count * 10)
-        chaos_bonus = avg_chaos * 10
-        mastery = int(max(0, min(100, base_score + chaos_bonus)))
-
-        return GameProfile(
-            mastery_score=mastery,
-            player_type=player_type,
-            avg_fragility=avg_frag,
-            avg_chaos=avg_chaos,
-            blunder_count=blunder_count,
-            moves_analysis=analyzed_moves
-        )
+    avg_difficulty = int((sum_difficulty / move_count) * 100) if move_count else 0
+    
+    return {
+        "players": {"user": player_name, "opponent": opp_name},
+        "result": headers.get("Result", "*"),
+        "stats": {
+            "blunders": blunder_count,
+            "avg_difficulty": avg_difficulty,
+            "pushups": blunder_count * 10 
+        },
+        "moves": analysis_details
+    }

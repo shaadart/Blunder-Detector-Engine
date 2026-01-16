@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_chess_board/flutter_chess_board.dart';
-import 'package:mae_chess_ui/game_timeline.dart';
-import 'package:mae_chess_ui/hero_header.dart';
+import 'package:flutter_chess_board/flutter_chess_board.dart' hide Color;
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'mae_service.dart';
-import 'radar_chart_widget.dart';
+import 'hero_header.dart';
+import 'game_timeline.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({Key? key}) : super(key: key);
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -18,70 +17,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ChessBoardController _controller = ChessBoardController();
   final MaeService _maeService = MaeService();
 
-  // Single Move Analysis
   MaeAnalysisResult? _currentAnalysis;
   bool _isLoading = false;
-  List<BoardArrow> _arrows = [];
+  final List<BoardArrow> _arrows = [];
 
-  // Full Game Mode Data
   MaeGameProfile? _gameProfile;
   int _historyIndex = 0;
   bool _isGameMode = false;
 
-  // Header Data
-  int _masteryScore = 0;
+  int _avgDifficulty = 0;
+  int _pushups = 0;
   String _playerType = "Unknown";
 
-  @override
-  void initState() {
-    super.initState();
-    _analyzePosition(); // Analyze starting position
-  }
-
-  // --- LOGIC ---
-
-  Future<void> _analyzePosition() async {
-    // If we are in Game Mode, do NOT re-analyze with backend. 
-    // Just show the cached data from the profile.
-    if (_isGameMode && _gameProfile != null) {
-      _loadHistoryFrame(_historyIndex);
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    String fen = _controller.getFen();
-    final result = await _maeService.analyzePosition(fen);
-
-    if (mounted) {
-      setState(() {
-        _currentAnalysis = result;
-        _isLoading = false;
-        _updateArrows(result);
-      });
-    }
-  }
+  // ---------------- LOGIC ----------------
 
   Future<void> _uploadPgn() async {
-    // Show Dialog to paste PGN
-    TextEditingController pgnController = TextEditingController();
-    
-    // Default PGN for testing (The Opera Game)
-    pgnController.text = '[Event "Paris Opera House"]\n[Site "Paris"]\n[Date "1858.??.??"]\n[Round "?"]\n[White "Paul Morphy"]\n[Black "Duke Karl / Count Isouard"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0';
+    final pgnController = TextEditingController();
+    final userController = TextEditingController();
+
+    pgnController.text =
+        '[Event "Paris Opera House"]\n'
+        '[Site "Paris"]\n'
+        '[Date "1858.??.??"]\n\n'
+        '1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 '
+        '5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 '
+        '8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 '
+        '11. Bxb5+ Nbd7 12. O-O-O Rd8 '
+        '13. Rxd7 Rxd7 14. Rd1 Qe6 '
+        '15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8#';
+
+    userController.text = "Morphy";
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF121212),
         title: const Text("Import PGN", style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: pgnController,
-          maxLines: 8,
-          style: const TextStyle(color: Colors.white70, fontFamily: 'Courier', fontSize: 12),
-          decoration: const InputDecoration(
-            hintText: "Paste PGN here...",
-            hintStyle: TextStyle(color: Colors.white24),
-            border: OutlineInputBorder(),
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: userController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: "Username",
+                labelStyle: TextStyle(color: Colors.cyan),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: pgnController,
+              maxLines: 6,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontFamily: 'Courier',
+                fontSize: 12,
+              ),
+              decoration: const InputDecoration(
+                hintText: "Paste PGN here...",
+                hintStyle: TextStyle(color: Colors.white24),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -91,126 +88,109 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _processFullGame(pgnController.text);
+              _processFullGame(pgnController.text, userController.text);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
-            child: const Text("ANALYZE GAME", style: TextStyle(color: Colors.black)),
+            child: const Text("ANALYZE"),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _processFullGame(String pgn) async {
+  Future<void> _processFullGame(String pgn, String username) async {
     setState(() => _isLoading = true);
-    
-    final profile = await _maeService.analyzeGame(pgn);
 
-    if (mounted && profile != null) {
-      setState(() {
-        _gameProfile = profile;
-        _isGameMode = true;
-        _historyIndex = 0;
-        _masteryScore = profile.masteryScore;
-        _playerType = profile.playerType;
-        _isLoading = false;
-      });
-      // Load the first move
-      _loadHistoryFrame(0);
-    } else {
-      setState(() => _isLoading = false);
-    }
+    final profile = await _maeService.analyzeGame(pgn, username);
+    if (!mounted || profile == null) return;
+
+    setState(() {
+      _gameProfile = profile;
+      _isGameMode = true;
+      _historyIndex = 0;
+      _avgDifficulty = profile.avgDifficulty;
+      _pushups = profile.pushups;
+      _playerType = profile.playerType;
+      _isLoading = false;
+    });
+
+    _loadHistoryFrame(0);
   }
 
   void _loadHistoryFrame(int index) {
     if (_gameProfile == null) return;
-    
-    // Ensure index bounds
-    if (index < 0) index = 0;
-    if (index >= _gameProfile!.moves.length) index = _gameProfile!.moves.length - 1;
 
-    final frame = _gameProfile!.moves[index];
+    final safeIndex = index.clamp(0, _gameProfile!.moves.length - 1);
+
+    final frame = _gameProfile!.moves[safeIndex];
 
     setState(() {
-      _historyIndex = index;
+      _historyIndex = safeIndex;
       _currentAnalysis = frame;
-      _controller.loadFen(frame.fen); // Update the board visually
       _updateArrows(frame);
     });
   }
 
   void _updateArrows(MaeAnalysisResult? result) {
     _arrows.clear();
-    if (result != null && result.bestMoveUci.isNotEmpty) {
-      if (result.bestMoveUci.length >= 4) {
-        _arrows.add(BoardArrow(
-          from: result.bestMoveUci.substring(0, 2),
-          to: result.bestMoveUci.substring(2, 4),
-          color: Colors.cyanAccent.withOpacity(0.8),
-        ));
-      }
-    }
+    if (result?.bestMove == null) return;
+
+    final best = result!.bestMove!;
+    if (best.length < 4) return;
+
+    _arrows.add(
+      BoardArrow(
+        from: best.substring(0, 2),
+        to: best.substring(2, 4),
+        color: Color(0xB300E676), // green @ 70%
+      ),
+    );
   }
 
-  // --- UI BUILDING ---
+  // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[900],
+      backgroundColor: const Color(0xFF121212),
       body: SafeArea(
         child: Column(
           children: [
-            // 1. HERO HEADER
+            if (_isLoading) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+            ],
             HeroHeaderWidget(
-              score: _masteryScore,
+              avgDifficulty: _avgDifficulty,
+              pushups: _pushups,
               playerType: _playerType,
               onUploadPressed: _uploadPgn,
             ),
-
-            // 2. MAIN CONTENT
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    const SizedBox(height: 10),
                     _buildEvalBar(),
                     const SizedBox(height: 10),
-                    
-                    // Board
                     Expanded(
-                      flex: 5,
-                      child: Center(
-                        child: ChessBoard(
-                          controller: _controller,
-                          boardColor: BoardColor.brown,
-                          boardOrientation: PlayerColor.white,
-                          arrows: _arrows,
-                          enableUserMoves: !_isGameMode, // Disable manual moves in review mode
-                        ),
+                      child: ChessBoard(
+                        controller: _controller,
+                        boardColor: BoardColor.brown,
+                        arrows: _arrows,
+                        enableUserMoves: !_isGameMode,
                       ),
                     ),
                     const SizedBox(height: 10),
-                    _buildControlPanel(),
-                    const SizedBox(height: 10),
-                    
-                    // Mentor Panel
-                    SizedBox(
-                      height: 150,
-                      child: _buildMentorPanel(),
-                    ),
+                    _buildMentorPanel(),
                   ],
                 ),
               ),
             ),
-            
-            // 3. TIMELINE (Only visible in Game Mode)
             if (_isGameMode && _gameProfile != null)
               GameTimelineWidget(
                 history: _gameProfile!.moves,
                 currentIndex: _historyIndex,
-                onMoveSelected: (index) => _loadHistoryFrame(index),
+                onMoveSelected: _loadHistoryFrame,
               ),
           ],
         ),
@@ -219,116 +199,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildEvalBar() {
-    double percent = _currentAnalysis?.winningChance ?? 0.5;
-    bool isVolatile = _currentAnalysis?.isVolatile ?? false;
-    final barColor = isVolatile ? Colors.pinkAccent : Colors.cyanAccent;
-    List<BoxShadow>? glow = isVolatile
-        ? [BoxShadow(color: barColor.withOpacity(0.6), blurRadius: 20, spreadRadius: 2)]
-        : null;
+    if (_currentAnalysis == null) return const SizedBox(height: 8);
 
-    return Container(
-      decoration: BoxDecoration(boxShadow: glow),
-      child: LinearPercentIndicator(
-        lineHeight: 8.0,
-        percent: percent,
-        backgroundColor: Colors.grey[800],
-        progressColor: barColor,
-        barRadius: const Radius.circular(4),
-        animation: true,
-        animateFromLastPercent: true,
-      ),
-    );
-  }
+    final percent = (_currentAnalysis!.winChance / 100).clamp(0.0, 1.0);
 
-  Widget _buildControlPanel() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _navButton(Icons.first_page, () {
-          if (_isGameMode) _loadHistoryFrame(0);
-          else { _controller.resetBoard(); _analyzePosition(); }
-        }),
-        _navButton(Icons.chevron_left, () {
-          if (_isGameMode) _loadHistoryFrame(_historyIndex - 1);
-          else { _controller.undoMove(); _analyzePosition(); }
-        }),
-        FloatingActionButton(
-          mini: true,
-          backgroundColor: Colors.cyanAccent,
-          onPressed: _isGameMode ? null : _analyzePosition, // Disable manual analyze in review
-          child: _isLoading
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-              : const Icon(Icons.psychology, color: Colors.black, size: 20),
-        ),
-        _navButton(Icons.chevron_right, () {
-          if (_isGameMode) _loadHistoryFrame(_historyIndex + 1);
-        }),
-        _navButton(Icons.last_page, () {
-           if (_isGameMode && _gameProfile != null) _loadHistoryFrame(_gameProfile!.moves.length - 1);
-        }),
-      ],
-    );
-  }
+    final risky = _currentAnalysis!.risk > 60;
 
-  Widget _navButton(IconData icon, VoidCallback onPressed) {
-    return IconButton(
-      icon: Icon(icon, color: Colors.white70),
-      iconSize: 28,
-      onPressed: onPressed,
+    return LinearPercentIndicator(
+      lineHeight: 8,
+      percent: percent,
+      backgroundColor: const Color(0xFF2A2A2A),
+      progressColor: risky ? Colors.orangeAccent : Colors.cyanAccent,
+      barRadius: const Radius.circular(4),
+      animation: true,
     );
   }
 
   Widget _buildMentorPanel() {
     if (_currentAnalysis == null) {
-      return const Center(child: Text("Waiting for telemetry...", style: TextStyle(color: Colors.white54)));
+      return const Text(
+        "Import a PGN to begin MAE Analysis.",
+        style: TextStyle(color: Colors.white54),
+      );
+    }
+
+    Color labelColor = Colors.cyanAccent;
+    if (_currentAnalysis!.label.contains("Blunder")) {
+      labelColor = Colors.red;
+    } else if (_currentAnalysis!.label.contains("Mistake")) {
+      labelColor = Colors.orange;
     }
 
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
+        color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Color(0x1FFFFFFF)),
       ),
       child: Row(
         children: [
-          MaeRadarChart(
-            objective: _currentAnalysis!.winningChance,
-            fragility: _currentAnalysis!.fragility,
-            chaos: _currentAnalysis!.chaos,
+          _statBadge(
+            "DIFFICULTY",
+            _currentAnalysis!.difficulty,
+            Colors.redAccent,
           ),
+          const SizedBox(width: 12),
+          _statBadge("RISK", _currentAnalysis!.risk, Colors.orangeAccent),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  children: [
-                    Text("RECOMMENDATION: ", style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold, fontSize: 10)),
-                    Text(
-                      _currentAnalysis!.bestMoveUci.toUpperCase(),
-                      style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Courier'),
-                    ),
-                  ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0x33FFFFFF), // 20% white
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                _currentAnalysis!.label.toUpperCase(),
+                style: TextStyle(
+                  color: labelColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
                 ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _currentAnalysis!.explanation,
-                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "Fragility: ${(_currentAnalysis!.fragility * 100).toInt()}% | Chaos: ${(_currentAnalysis!.chaos * 100).toInt()}%",
-                  style: TextStyle(color: Colors.grey[600], fontSize: 10),
-                ),
-              ],
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statBadge(String label, int value, Color color) {
+    return Container(
+      width: 80,
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFFFFFF), // 10% white
+        border: Border.all(color: Color(0x55FFFFFF)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value.toString(),
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xB3FFFFFF), fontSize: 10),
           ),
         ],
       ),

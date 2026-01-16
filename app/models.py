@@ -1,45 +1,27 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 
-# --- INPUT ---
-class PositionRequest(BaseModel):
-    fen: str
-
-class GameRequest(BaseModel):
-    pgn: str
-
-# --- OUTPUT COMPONENTS ---
-class EvalBarData(BaseModel):
-    score_cp: int
-    winning_chance: float
-    is_volatile: bool
-
-class SuggestionArrow(BaseModel):
+# 1. Individual Move Analysis
+class MoveAnalysis(BaseModel):
+    move_number: int
     move_uci: str
-    type: str
+    label: str               # e.g., "Pragmatic Simplification", "Blunder"
+    win_chance: float        # 0-100%
+    delta: float             # Change in win chance (Regret)
+    difficulty: int          # 0-100 (PDI)
+    risk: int                # 0-100 (RVS)
+    best_move: Optional[str] # The move Stockfish wanted (if different)
+    eval_display: str        # e.g. "+1.50" or "#3"
 
-class BestLineData(BaseModel):
-    truncated_line: str
-    explanation: str
+# 2. Game Statistics
+class GameStats(BaseModel):
+    blunders: int
+    avg_difficulty: int      # The average PDI of the game
+    pushups: int             # Your accountability metric
 
-class TelemetryData(BaseModel):
-    objective_score: float
-    fragility_score: float
-    chaos_score: float
-
-class AnalysisResponse(BaseModel):
-    fen: str
-    move_number: int # New: Track move order
-    eval_bar: EvalBarData
-    telemetry: TelemetryData
-    arrows: List[SuggestionArrow]
-    best_line: BestLineData
-
-# --- NEW: FULL GAME PROFILE ---
-class GameProfile(BaseModel):
-    mastery_score: int          # 0-100
-    player_type: str         # "Risk Master", "Solid Defender", etc.
-    avg_fragility: float
-    avg_chaos: float
-    blunder_count: int
-    moves_analysis: List[AnalysisResponse]
+# 3. The Full Response Object
+class GameAnalysisResponse(BaseModel):
+    players: Dict[str, str]  # {"user": "Shrad", "opponent": "Magnus"}
+    result: str              # "1-0", "0-1", "1/2-1/2"
+    stats: GameStats
+    moves: List[MoveAnalysis]

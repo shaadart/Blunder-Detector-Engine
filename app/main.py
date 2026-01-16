@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
-from .models import PositionRequest, GameRequest, AnalysisResponse, GameProfile
-from .analyzer import MAEAnalyzer
+from .models import GameAnalysisResponse
+from .analyzer import analyze_pgn 
 
-app = FastAPI(title="MAE Chess Backend")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,29 +13,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-analyzer = MAEAnalyzer()
-
 @app.get("/")
-def health_check():
-    return {"status": "MAE Backend is running"}
+def home():
+    return {"message": "MAE Chess Engine is Running"}
 
-@app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_position(request: PositionRequest):
+@app.post("/analyze-game", response_model=GameAnalysisResponse)
+def analyze_game(
+    # 1. Username is now a Query Parameter (?username=Shrad)
+    username: str = Query(..., description="The chess username to analyze perspective for"),
+    
+    # 2. PGN is now the Raw Body (Text)
+    pgn: str = Body(..., media_type="text/plain", description="Raw PGN text content")
+):
+    """
+    Analyzes a full game PGN.
+    
+    Input: Raw Text Body (The PGN string)
+    Query Param: ?username=YourName
+    """
     try:
-        if len(request.fen.split()) < 4:
-             raise HTTPException(status_code=400, detail="Invalid FEN")
-        return await analyzer.analyze_fen(request.fen)
+        # Pass the raw PGN string directly to the analyzer
+        analysis_result = analyze_pgn(pgn, username)
+        return analysis_result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Engine Error")
 
-# --- NEW ENDPOINT ---
-@app.post("/analyze/game", response_model=GameProfile)
-async def analyze_game(request: GameRequest):
-    """
-    Analyzes a full PGN. Returns a GameProfile with Mastery Score and per-move analysis.
-    """
-    try:
-        return await analyzer.analyze_game_pgn(request.pgn)
-    except Exception as e:
-        print(f"Game Analysis Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Game analysis failed: {str(e)}")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'mae_service.dart'; // To access data models
+import 'mae_service.dart';
 
 class GameTimelineWidget extends StatelessWidget {
   final List<MaeAnalysisResult> history;
@@ -16,7 +16,7 @@ class GameTimelineWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 60,
+      height: 70,
       padding: const EdgeInsets.symmetric(vertical: 8),
       color: Colors.black26,
       child: ListView.builder(
@@ -26,18 +26,22 @@ class GameTimelineWidget extends StatelessWidget {
           final move = history[index];
           final bool isSelected = index == currentIndex;
           
-          // Color Logic:
-          // Green = Low Chaos
-          // Orange = High Chaos/Fragility
-          // Red = Blunder (Huge CP swing, logic approximated here)
-          Color chipColor = Colors.greenAccent;
-          if (move.isVolatile) chipColor = Colors.orangeAccent;
-          if (move.fragility > 0.8) chipColor = Colors.redAccent;
+          // New Color Logic based on Backend Labels
+          Color chipColor = Colors.grey;
+          
+          if (move.label.contains("Blunder")) chipColor = Colors.red;
+          else if (move.label.contains("Mistake")) chipColor = Colors.orange;
+          else if (move.label.contains("Inaccuracy")) chipColor = Colors.yellow[700]!;
+          else if (move.label.contains("Best") || move.label.contains("Excellent")) chipColor = Colors.green;
+          else if (move.label.contains("Simplification")) chipColor = Colors.blueAccent;
+          
+          // Highlight Risk (RVS)
+          bool isRisky = move.risk > 60;
 
           return GestureDetector(
             onTap: () => onMoveSelected(index),
             child: Container(
-              width: 45,
+              width: 50,
               margin: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
                 color: isSelected ? chipColor : chipColor.withOpacity(0.2),
@@ -48,19 +52,22 @@ class GameTimelineWidget extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    "${index + 1}",
+                    "${move.moveNumber}",
                     style: TextStyle(
-                      color: isSelected ? Colors.black : Colors.white70,
+                      color: isSelected ? Colors.white : Colors.white70,
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
                   ),
-                  // Tiny dot for chaos
-                  if (move.chaos > 0.5)
+                  const SizedBox(height: 4),
+                  // Tiny dot for High Risk
+                  if (isRisky)
                     Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      width: 4, height: 4,
-                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                      width: 6, height: 6,
+                      decoration: const BoxDecoration(
+                        color: Colors.orangeAccent, 
+                        shape: BoxShape.circle
+                      ),
                     )
                 ],
               ),
