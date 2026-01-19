@@ -65,16 +65,16 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
   /// Get analysis result for the current board position (if any)
   MaeAnalysisResult? get _currentAnalysis {
     if (_gameProfile == null || _currentMoveIndex < 0) return null;
-    
+
     // Find if there's a problem at this half-move index
     // Problems are stored by move number - need to map half-move to move number
     final isWhiteMove = _currentMoveIndex % 2 == 0;
     final moveNumber = (_currentMoveIndex ~/ 2) + 1;
     final playerIsWhite = _gameProfile!.playerColor.toLowerCase() == 'white';
-    
+
     // Only show analysis if this move belongs to the analyzed player
     if (isWhiteMove != playerIsWhite) return null;
-    
+
     // Find problem for this move number
     for (final problem in _gameProfile!.moves) {
       if (problem.moveNumber == moveNumber) {

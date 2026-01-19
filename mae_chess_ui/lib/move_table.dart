@@ -11,18 +11,24 @@ class MoveSymbols {
   static const String bishop = '♗';
   static const String knight = '♘';
   static const String pawn = '';
-  
+
   /// Format move with piece symbol (e.g., "Nf3" -> "♘f3")
   static String formatMove(String san) {
     if (san.isEmpty) return '';
     final firstChar = san[0];
     switch (firstChar) {
-      case 'K': return '$king${san.substring(1)}';
-      case 'Q': return '$queen${san.substring(1)}';
-      case 'R': return '$rook${san.substring(1)}';
-      case 'B': return '$bishop${san.substring(1)}';
-      case 'N': return '$knight${san.substring(1)}';
-      default: return san; // Pawn moves and castling stay as-is
+      case 'K':
+        return '$king${san.substring(1)}';
+      case 'Q':
+        return '$queen${san.substring(1)}';
+      case 'R':
+        return '$rook${san.substring(1)}';
+      case 'B':
+        return '$bishop${san.substring(1)}';
+      case 'N':
+        return '$knight${san.substring(1)}';
+      default:
+        return san; // Pawn moves and castling stay as-is
     }
   }
 }
@@ -73,7 +79,10 @@ class MoveTable extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       child: Row(
         children: const [
-          SizedBox(width: 35, child: Text('#', style: RetroTextStyles.tableHeader)),
+          SizedBox(
+            width: 35,
+            child: Text('#', style: RetroTextStyles.tableHeader),
+          ),
           Expanded(child: Text('White', style: RetroTextStyles.tableHeader)),
           Expanded(child: Text('Black', style: RetroTextStyles.tableHeader)),
         ],
@@ -103,12 +112,12 @@ class MoveTable extends StatelessWidget {
         children: List.generate(numRows, (rowIndex) {
           final whiteHalfMoveIndex = rowIndex * 2;
           final blackHalfMoveIndex = rowIndex * 2 + 1;
-          
-          final whiteSan = whiteHalfMoveIndex < allMoves.length 
-              ? allMoves[whiteHalfMoveIndex] 
+
+          final whiteSan = whiteHalfMoveIndex < allMoves.length
+              ? allMoves[whiteHalfMoveIndex]
               : null;
-          final blackSan = blackHalfMoveIndex < allMoves.length 
-              ? allMoves[blackHalfMoveIndex] 
+          final blackSan = blackHalfMoveIndex < allMoves.length
+              ? allMoves[blackHalfMoveIndex]
               : null;
 
           return _MoveRow(
@@ -122,10 +131,10 @@ class MoveTable extends StatelessWidget {
             blackProblem: _getProblemAt(rowIndex + 1, false),
             playerColor: playerColor,
             isEven: rowIndex % 2 == 0,
-            onWhiteTap: whiteSan != null 
+            onWhiteTap: whiteSan != null
                 ? () => onMoveSelected?.call(whiteHalfMoveIndex)
                 : null,
-            onBlackTap: blackSan != null 
+            onBlackTap: blackSan != null
                 ? () => onMoveSelected?.call(blackHalfMoveIndex)
                 : null,
           );
@@ -139,7 +148,7 @@ class MoveTable extends StatelessWidget {
     final isPlayerWhite = playerColor.toLowerCase() == 'white';
     // Problems are only for the player's color
     if (isWhite != isPlayerWhite) return null;
-    
+
     for (final problem in problems) {
       if (problem.moveNumber == moveNumber) {
         return problem;
@@ -180,8 +189,10 @@ class _MoveRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = isEven ? RetroColors.tableRowEven : RetroColors.tableRowOdd;
-    
+    final baseColor = isEven
+        ? RetroColors.tableRowEven
+        : RetroColors.tableRowOdd;
+
     return Container(
       decoration: BoxDecoration(
         color: baseColor,
@@ -251,7 +262,7 @@ class _MoveCell extends StatelessWidget {
     // Determine background color based on problem severity
     Color? bgColor;
     Color textColor = RetroColors.textPrimary;
-    
+
     if (isSelected) {
       bgColor = RetroColors.selectedRow;
       textColor = RetroColors.selectedRowText;

@@ -7,7 +7,7 @@ import 'retro_widgets.dart';
 class ChessBoardColors {
   // Chess.com green theme (most recognizable)
   static const Color lightSquare = Color(0xFFEEEED2); // Light cream
-  static const Color darkSquare = Color(0xFF769656);  // Forest green
+  static const Color darkSquare = Color(0xFF769656); // Forest green
 
   // Move highlight colors (yellow-green tint)
   static const Color lastMoveLight = Color(0xFFF6F669);
@@ -16,7 +16,7 @@ class ChessBoardColors {
   // Coordinate colors
   static const Color coordOnLight = Color(0xFF769656);
   static const Color coordOnDark = Color(0xFFFFFFFF);
-  
+
   // Board border
   static const Color boardBorder = Color(0xFF312E2B);
 }
@@ -432,7 +432,11 @@ class _InteractiveChessBoardPanelState
               ]
             : const [
                 // Subtle shadow for black pieces
-                Shadow(offset: Offset(1, 1), blurRadius: 1, color: Color(0x40000000)),
+                Shadow(
+                  offset: Offset(1, 1),
+                  blurRadius: 1,
+                  color: Color(0x40000000),
+                ),
               ],
       ),
     );
