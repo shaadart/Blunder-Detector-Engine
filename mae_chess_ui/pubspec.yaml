@@ -34,6 +34,9 @@ dependencies:
   # The Board
   flutter_chess_board: 
   
+  # Chess logic for PGN parsing and move validation
+  chess: ^0.7.0
+  
   # HTTP to talk to your Docker backend
   http: 
   

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'retro_theme.dart';
 import 'retro_widgets.dart';
 import 'chess_board_panel.dart';
@@ -23,9 +24,16 @@ class MaeChessApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       color: RetroColors.titleBarActive,
       builder: (context, _) {
-        return const Directionality(
+        return Directionality(
           textDirection: TextDirection.ltr,
-          child: RetroChessAnalyzer(),
+          child: DefaultTextStyle(
+            style: RetroTextStyles.uiText,
+            child: Overlay(
+              initialEntries: [
+                OverlayEntry(builder: (context) => const RetroChessAnalyzer()),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -42,42 +50,116 @@ class RetroChessAnalyzer extends StatefulWidget {
 
 class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
   final MaeService _maeService = MaeService();
+  final ChessGameController _boardController = ChessGameController();
+  final FocusNode _keyboardFocusNode = FocusNode();
 
   // State
   MaeGameProfile? _gameProfile;
-  int _currentMoveIndex = 0;
   bool _isLoading = false;
   bool _showPgnDialog = false;
   String? _errorMessage;
-  final ChessPosition _currentPosition = ChessPosition.initial();
   String _statusText = 'Ready. Use File > Load PGN to analyze a game.';
 
-  MaeAnalysisResult? get _currentMove {
-    if (_gameProfile == null ||
-        _currentMoveIndex < 0 ||
-        _currentMoveIndex >= _gameProfile!.moves.length) {
-      return null;
+  int get _currentMoveIndex => _boardController.currentMoveIndex;
+
+  /// Get analysis result for the current board position (if any)
+  MaeAnalysisResult? get _currentAnalysis {
+    if (_gameProfile == null || _currentMoveIndex < 0) return null;
+    
+    // Find if there's a problem at this half-move index
+    // Problems are stored by move number - need to map half-move to move number
+    final isWhiteMove = _currentMoveIndex % 2 == 0;
+    final moveNumber = (_currentMoveIndex ~/ 2) + 1;
+    final playerIsWhite = _gameProfile!.playerColor.toLowerCase() == 'white';
+    
+    // Only show analysis if this move belongs to the analyzed player
+    if (isWhiteMove != playerIsWhite) return null;
+    
+    // Find problem for this move number
+    for (final problem in _gameProfile!.moves) {
+      if (problem.moveNumber == moveNumber) {
+        return problem;
+      }
     }
-    return _gameProfile!.moves[_currentMoveIndex];
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _keyboardFocusNode.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF008080), // Classic teal desktop
-      child: Center(
+    return KeyboardListener(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Container(
+        color: const Color(0xFF008080), // Classic teal desktop
         child: Stack(
+          alignment: Alignment.center,
           children: [
-            // Main window
-            _buildMainWindow(),
-            // Dialog overlay
-            if (_showPgnDialog) _buildDialogOverlay(),
-            if (_isLoading) _buildLoadingOverlay(),
-            if (_errorMessage != null) _buildErrorOverlay(),
+            // Main window - always centered, wrapped to prevent text selection
+            MouseRegion(
+              cursor: SystemMouseCursors.basic,
+              child: _buildMainWindow(),
+            ),
+            // Overlays - positioned to fill the entire screen and centered
+            if (_showPgnDialog) _buildFullScreenOverlay(_buildDialogContent()),
+            if (_isLoading) _buildFullScreenOverlay(_buildLoadingContent()),
+            if (_errorMessage != null)
+              _buildFullScreenOverlay(_buildErrorContent()),
           ],
         ),
       ),
     );
+  }
+
+  /// Full screen overlay that won't shift the main content
+  Widget _buildFullScreenOverlay(Widget child) {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0x80000000),
+        child: Center(child: child),
+      ),
+    );
+  }
+
+  Widget _buildDialogContent() {
+    return PgnLoadDialog(
+      onLoad: _loadPgn,
+      onCancel: () => setState(() => _showPgnDialog = false),
+    );
+  }
+
+  Widget _buildLoadingContent() {
+    return const RetroLoadingDialog(
+      message: 'Analyzing game with MAE Engine...',
+    );
+  }
+
+  Widget _buildErrorContent() {
+    return RetroMessageDialog(
+      title: 'Error',
+      message: _errorMessage!,
+      onOk: () => setState(() => _errorMessage = null),
+    );
+  }
+
+  void _handleKeyEvent(KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+        _goToPrevious();
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+        _goToNext();
+      } else if (event.logicalKey == LogicalKeyboardKey.home) {
+        _goToStart();
+      } else if (event.logicalKey == LogicalKeyboardKey.end) {
+        _goToEnd();
+      }
+    }
   }
 
   Widget _buildMainWindow() {
@@ -109,18 +191,14 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
           padding: const EdgeInsets.all(8),
           child: Column(
             children: [
-              // Board area
-              RetroPanel(
-                child: ChessBoardPanel(
-                  position: _currentPosition,
-                  currentMoveIndex: _currentMoveIndex,
-                  totalMoves: _gameProfile?.moves.length ?? 0,
-                  onFirstMove: () => _goToMove(0),
-                  onPreviousMove: () => _goToMove(_currentMoveIndex - 1),
-                  onNextMove: () => _goToMove(_currentMoveIndex + 1),
-                  onLastMove: () =>
-                      _goToMove((_gameProfile?.moves.length ?? 1) - 1),
-                  boardSize: 320,
+              // Interactive board - Expanded to take available space
+              Expanded(
+                child: RetroPanel(
+                  child: InteractiveChessBoardPanel(
+                    controller: _boardController,
+                    boardSize: 300, // Slightly smaller to fit
+                    onPositionChanged: _onBoardPositionChanged,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -141,21 +219,21 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
                 Expanded(
                   flex: 2,
                   child: TutorConsole(
-                    currentMove: _currentMove,
+                    currentMove: _currentAnalysis,
                     useTypewriterEffect: true,
                     typewriterDelayMs: 15,
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Move table (bottom)
+                // Full move table (bottom) - shows ALL moves
                 Expanded(
                   flex: 3,
                   child: MoveTable(
-                    moves: _gameProfile?.moves ?? [],
-                    selectedIndex: _gameProfile != null
-                        ? _currentMoveIndex
-                        : null,
-                    onMoveSelected: _goToMove,
+                    allMoves: _boardController.allMoves,
+                    problems: _gameProfile?.moves ?? [],
+                    currentHalfMoveIndex: _currentMoveIndex,
+                    playerColor: _gameProfile?.playerColor ?? 'white',
+                    onMoveSelected: _goToHalfMove,
                   ),
                 ),
               ],
@@ -177,6 +255,11 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
             SizedBox(height: 4),
             Text(
               'Use File menu to load a PGN file.',
+              style: RetroTextStyles.uiText,
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Keyboard: ← → to navigate moves',
               style: RetroTextStyles.uiText,
             ),
           ],
@@ -241,36 +324,6 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
     );
   }
 
-  Widget _buildDialogOverlay() {
-    return Container(
-      color: const Color(0x80000000),
-      child: PgnLoadDialog(
-        onLoad: _loadPgn,
-        onCancel: () => setState(() => _showPgnDialog = false),
-      ),
-    );
-  }
-
-  Widget _buildLoadingOverlay() {
-    return Container(
-      color: const Color(0x80000000),
-      child: const RetroLoadingDialog(
-        message: 'Analyzing game with MAE Engine...',
-      ),
-    );
-  }
-
-  Widget _buildErrorOverlay() {
-    return Container(
-      color: const Color(0x80000000),
-      child: RetroMessageDialog(
-        title: 'Error',
-        message: _errorMessage!,
-        onOk: () => setState(() => _errorMessage = null),
-      ),
-    );
-  }
-
   void _loadPgn(String pgn, String username) async {
     setState(() {
       _showPgnDialog = false;
@@ -285,12 +338,25 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
       );
 
       if (result != null) {
+        // Load PGN into the board controller for interactive replay
+        if (!_boardController.loadPgn(pgn)) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage =
+                'Failed to parse PGN moves.\nPlease check the PGN format.';
+            _statusText = 'PGN parse error.';
+          });
+          return;
+        }
+
+        // Go to starting position to see the initial board
+        _boardController.goToStart();
+
         setState(() {
           _gameProfile = MaeGameProfile.fromJson(result);
-          _currentMoveIndex = 0;
           _isLoading = false;
           _statusText =
-              'Analysis complete. ${_gameProfile!.moves.length} moves analyzed. '
+              'Analysis complete. ${_gameProfile!.moves.length} problems found. '
               'Engine: Stockfish 16 | Depth: 18';
         });
       } else {
@@ -312,17 +378,61 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
     }
   }
 
-  void _goToMove(int index) {
-    if (_gameProfile == null) return;
+  void _onBoardPositionChanged() {
+    setState(() {
+      _updateStatusText();
+    });
+  }
 
-    final newIndex = index.clamp(0, _gameProfile!.moves.length - 1);
-    if (newIndex != _currentMoveIndex) {
-      setState(() {
-        _currentMoveIndex = newIndex;
-        _statusText =
-            'Move ${_currentMoveIndex + 1} of ${_gameProfile!.moves.length} | '
-            'Eval: ${_currentMove?.evalDisplay ?? "N/A"}';
-      });
+  /// Go to a specific half-move index (called from the move table)
+  void _goToHalfMove(int halfMoveIndex) {
+    _boardController.goToMove(halfMoveIndex);
+    setState(() {
+      _updateStatusText();
+    });
+  }
+
+  void _goToStart() {
+    setState(() {
+      _boardController.goToStart();
+      _updateStatusText();
+    });
+  }
+
+  void _goToPrevious() {
+    setState(() {
+      _boardController.goToPrevious();
+      _updateStatusText();
+    });
+  }
+
+  void _goToNext() {
+    setState(() {
+      _boardController.goToNext();
+      _updateStatusText();
+    });
+  }
+
+  void _goToEnd() {
+    setState(() {
+      _boardController.goToEnd();
+      _updateStatusText();
+    });
+  }
+
+  void _updateStatusText() {
+    if (_gameProfile == null) {
+      _statusText = 'Ready. Use File > Load PGN to analyze a game.';
+    } else {
+      final moveNum = _boardController.currentMoveIndex + 1;
+      final total = _boardController.totalMoves;
+      final turn = _boardController.isWhiteToMove ? 'White' : 'Black';
+      _statusText = 'Position after move $moveNum of $total | $turn to move';
+
+      // Show eval if we have analysis for current position
+      if (_currentAnalysis != null) {
+        _statusText += ' | Eval: ${_currentAnalysis!.evalDisplay}';
+      }
     }
   }
 
@@ -332,6 +442,9 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
           'Chess Analysis Tool v1.0\n\n'
           'MAE (Move Analysis Engine)\n'
           'Powered by Stockfish 16\n\n'
+          'Keyboard shortcuts:\n'
+          '← → Navigate moves\n'
+          'Home/End Jump to start/end\n\n'
           '© 1999-2026\n'
           'Best viewed at 1024×768';
     });
