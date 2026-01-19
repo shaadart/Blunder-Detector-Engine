@@ -119,5 +119,5 @@ Stockfish 16           Chess Engine
 ---
 
 <p align="center">
-  <em>Built with ☕ and questionable UI decisions</em>
+  <em>Built with love (for the sake of chess) and questionable UI decisions</em>
 </p>
