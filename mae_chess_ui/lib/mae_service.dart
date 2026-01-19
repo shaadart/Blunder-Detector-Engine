@@ -84,31 +84,36 @@ class MaeAnalysisResult {
 // --- SERVICE ---
 
 class MaeService {
-  // Update this to your machine's IP if testing on real device
   String get _baseUrl {
     if (kIsWeb) return "http://localhost:8000";
-    if (Platform.isAndroid) return "http://10.0.2.2:8000"; 
+    if (Platform.isAndroid) return "http://10.0.2.2:8000";
     return "http://localhost:8000";
   }
 
-  Future<MaeGameProfile?> analyzeGame(String pgn, String username) async {
+  Future<Map<String, dynamic>?> analyzeGame({
+    required String pgn,
+    required String username,
+  }) async {
     try {
+      final uri = Uri.parse(
+        '$_baseUrl/analyze-pgn?player=${Uri.encodeQueryComponent(username)}',
+      );
+
       final response = await http.post(
-        Uri.parse('$_baseUrl/analyze-game'), // Updated Endpoint
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "pgn": pgn,
-          "username": username
-        }),
+        uri,
+        headers: {
+          "Content-Type": "text/plain",
+        },
+        body: pgn, 
       );
 
       if (response.statusCode == 200) {
-        return MaeGameProfile.fromJson(jsonDecode(response.body));
+        return jsonDecode(response.body);
       } else {
-        print("Backend Error: ${response.body}");
+        debugPrint("Backend Error (${response.statusCode}): ${response.body}");
       }
     } catch (e) {
-      print("Connection Error: $e");
+      debugPrint("Connection Error: $e");
     }
     return null;
   }
