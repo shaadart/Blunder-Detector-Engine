@@ -1,3 +1,6 @@
+<img width="1172" height="848" alt="image" src="https://github.com/user-attachments/assets/87219ed9-7d31-4b30-aea0-f0eae81e30e6" />
+
+
 <p align="center">
   <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter"/>
   <img src="https://img.shields.io/badge/Stockfish-000000?style=for-the-badge&logo=lichess&logoColor=white" alt="Stockfish"/>
@@ -29,11 +32,11 @@ Paste your PGN. Get instant feedback on every blunder, mistake, and inaccuracy. 
 
 | Feature | Description |
 |---------|-------------|
-| ** Deep Analysis** | Stockfish 16 evaluates every move |
-| ** Move Classification** | Blunders • Mistakes • Inaccuracies |
-| ** Chess Tutor** | Real-time explanations with best move suggestions |
-| ** Full Move Table** | All moves with piece symbols (♔♕♖♗♘♙) |
-| ** Retro Vibes** | Windows 95 aesthetic, because nostalgia |
+| **Deep Analysis** | Stockfish 16 evaluates every move |
+| **Move Classification** | Blunders • Mistakes • Inaccuracies |
+| **Chess Tutor** | Real-time explanations with best move suggestions |
+| **Full Move Table** | All moves with piece symbols (♔♕♖♗♘♙) |
+| **Retro Vibes** | Windows 95 aesthetic, because nostalgia |
 
 ---
 
@@ -93,6 +96,9 @@ Stockfish 16           Chess Engine
 ---
 
 ##  Aesthetics
+
+<img width="677" height="490" alt="image" src="https://github.com/user-attachments/assets/97c109b8-871c-4a74-8158-99aeb24243f7" />
+
 
 > *"The Windows 95 UI makes losing at chess feel nostalgic."*
 
