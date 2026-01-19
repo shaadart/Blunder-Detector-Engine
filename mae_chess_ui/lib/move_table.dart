@@ -174,7 +174,7 @@ class _MoveRow extends StatelessWidget {
             _DataCell(
               width: 60,
               child: Text(
-                move.moveUci,
+                move.played,
                 style: RetroTextStyles.tableCell.copyWith(
                   color: textColor,
                   fontFamily: 'Courier New',
@@ -185,7 +185,7 @@ class _MoveRow extends StatelessWidget {
             _DataCell(
               width: 60,
               child: Text(
-                move.bestMove ?? '-',
+                move.bestMove,
                 style: RetroTextStyles.tableCell.copyWith(
                   color: textColor,
                   fontFamily: 'Courier New',
@@ -196,7 +196,7 @@ class _MoveRow extends StatelessWidget {
             _DataCell(
               width: 60,
               child: Text(
-                move.evalDisplay,
+                move.evalAfter,
                 style: RetroTextStyles.tableCell.copyWith(
                   color: textColor,
                   fontFamily: 'Courier New',
@@ -208,7 +208,7 @@ class _MoveRow extends StatelessWidget {
             _DataCell(
               flex: 1,
               child: Text(
-                move.label,
+                move.severity.toUpperCase(),
                 style: RetroTextStyles.tableCell.copyWith(color: textColor),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -220,14 +220,11 @@ class _MoveRow extends StatelessWidget {
   }
 
   bool _isMistake() {
-    return move.delta > 0.5 ||
-        move.label.toLowerCase().contains('mistake') ||
-        move.label.toLowerCase().contains('blunder');
+    return move.severity == 'blunder' || move.severity == 'mistake';
   }
 
   bool _isInaccuracy() {
-    return (move.delta > 0.2 && move.delta <= 0.5) ||
-        move.label.toLowerCase().contains('inaccuracy');
+    return move.severity == 'inaccuracy';
   }
 }
 

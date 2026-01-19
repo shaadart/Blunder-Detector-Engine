@@ -189,25 +189,52 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Player info
+          Text(
+            '${_gameProfile!.player} vs ${_gameProfile!.opponent}',
+            style: RetroTextStyles.uiText.copyWith(fontWeight: FontWeight.bold),
+          ),
+          Text(
+            '${_gameProfile!.playerColor.toUpperCase()} | ${_gameProfile!.gameMode}',
+            style: RetroTextStyles.uiText.copyWith(fontSize: 10),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               _StatBox(
                 label: 'Blunders',
                 value: '${_gameProfile!.blunderCount}',
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _StatBox(
-                label: 'Avg Diff',
-                value: '${_gameProfile!.avgDifficulty}',
+                label: 'Mistakes',
+                value: '${_gameProfile!.mistakeCount}',
               ),
-              const SizedBox(width: 8),
-              _StatBox(label: 'Push-ups', value: '${_gameProfile!.pushups}'),
+              const SizedBox(width: 6),
+              _StatBox(
+                label: 'Inaccuracies',
+                value: '${_gameProfile!.inaccuracyCount}',
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'Player Type: ${_gameProfile!.playerType}',
-            style: RetroTextStyles.uiText.copyWith(fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Text(
+                'Push-ups Due: ${_gameProfile!.pushups}',
+                style: RetroTextStyles.monoText.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: _gameProfile!.pushups > 0
+                      ? const Color(0xFFCC0000)
+                      : RetroColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                _gameProfile!.playerType,
+                style: RetroTextStyles.uiText.copyWith(fontSize: 10),
+              ),
+            ],
           ),
         ],
       ),

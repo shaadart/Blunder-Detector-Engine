@@ -92,32 +92,53 @@ class _TutorConsoleState extends State<TutorConsole> {
     final buffer = StringBuffer();
 
     // Move header
-    buffer.writeln('Move ${move.moveNumber}: ${move.moveUci}');
-    buffer.writeln('Classification: ${move.label.toUpperCase()}');
+    buffer.writeln('Move ${move.moveNumber}: ${move.played}');
+    buffer.writeln('Classification: ${move.severity.toUpperCase()}');
+    buffer.writeln('Game Phase: ${move.gamePhase}');
     buffer.writeln();
 
-    // Severity indicator
-    if (move.delta > 1.0) {
-      buffer.writeln('⚠ SEVERE MISTAKE');
-    } else if (move.delta > 0.5) {
-      buffer.writeln('! MISTAKE');
-    } else if (move.delta > 0.2) {
-      buffer.writeln('? INACCURACY');
-    } else if (move.delta < -0.5) {
-      buffer.writeln('!! EXCELLENT MOVE');
+    // Severity indicator with visual
+    switch (move.severity) {
+      case 'blunder':
+        buffer.writeln('⚠ BLUNDER - You will regret this!');
+        break;
+      case 'mistake':
+        buffer.writeln('✗ MISTAKE - Clear error');
+        break;
+      case 'inaccuracy':
+        buffer.writeln('? INACCURACY - Imprecise');
+        break;
     }
     buffer.writeln();
 
-    // Analysis text
-    buffer.writeln('Evaluation: ${move.evalDisplay}');
-    buffer.writeln('Win chance: ${move.winChance.toStringAsFixed(1)}%');
-    buffer.writeln('Position difficulty: ${move.difficulty}/100');
-    buffer.writeln('Risk factor: ${move.risk}/100');
+    // Tactical warnings
+    if (move.hangingPiece) {
+      buffer.writeln('!! HANGING PIECE DETECTED');
+    }
+    if (move.mateThreat != null) {
+      buffer.writeln('!! MATE THREAT: Mate in ${move.mateThreat}');
+    }
+    if (move.forcedLoss) {
+      buffer.writeln('!! FORCED MATERIAL LOSS');
+    }
 
-    if (move.bestMove != null && move.bestMove != move.moveUci) {
+    // Evaluations
+    buffer.writeln();
+    buffer.writeln('Before: ${move.evalBefore}');
+    buffer.writeln('After:  ${move.evalAfter}');
+    buffer.writeln('Regret: ${move.regret.toStringAsFixed(1)}% win prob');
+
+    // Better move suggestion
+    if (move.bestMove != move.played) {
       buffer.writeln();
-      buffer.writeln('Better move: ${move.bestMove}');
-      buffer.writeln('Regret: ${move.delta.toStringAsFixed(2)} pawns');
+      buffer.writeln('Better was: ${move.bestMove}');
+    }
+
+    // Punishment line
+    if (move.punishmentLine != null && move.punishmentLine!.isNotEmpty) {
+      buffer.writeln();
+      buffer.writeln('Opponent punishes with:');
+      buffer.writeln('  ${move.punishmentLine}');
     }
 
     return buffer.toString();
