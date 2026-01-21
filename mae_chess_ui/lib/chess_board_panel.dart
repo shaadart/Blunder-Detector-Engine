@@ -1,87 +1,17 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/widgets.dart';
 import 'package:chess/chess.dart' as chess_lib;
+import 'package:flutter_chess_board/flutter_chess_board.dart';
 import 'retro_theme.dart';
 import 'retro_widgets.dart';
 
-/// Standard chess board colors (Chess.com style)
-class ChessBoardColors {
-  // Chess.com green theme (most recognizable)
-  static const Color lightSquare = Color(0xFFEEEED2); // Light cream
-  static const Color darkSquare = Color(0xFF769656); // Forest green
-
-  // Move highlight colors (yellow-green tint)
-  static const Color lastMoveLight = Color(0xFFF6F669);
-  static const Color lastMoveDark = Color(0xFFBACA44);
-
-  // Coordinate colors
-  static const Color coordOnLight = Color(0xFF769656);
-  static const Color coordOnDark = Color(0xFFFFFFFF);
-
-  // Board border
-  static const Color boardBorder = Color(0xFF312E2B);
-}
-
-/// Chess piece characters (Unicode)
-class ChessPieces {
-  static const String whiteKing = '♔';
-  static const String whiteQueen = '♕';
-  static const String whiteRook = '♖';
-  static const String whiteBishop = '♗';
-  static const String whiteKnight = '♘';
-  static const String whitePawn = '♙';
-  static const String blackKing = '♚';
-  static const String blackQueen = '♛';
-  static const String blackRook = '♜';
-  static const String blackBishop = '♝';
-  static const String blackKnight = '♞';
-  static const String blackPawn = '♟';
-  static const String empty = '';
-
-  /// Get Unicode piece from chess library piece
-  static String fromChessPiece(chess_lib.Piece? piece) {
-    if (piece == null) return '';
-
-    final isWhite = piece.color == chess_lib.Color.WHITE;
-    switch (piece.type) {
-      case chess_lib.PieceType.KING:
-        return isWhite ? whiteKing : blackKing;
-      case chess_lib.PieceType.QUEEN:
-        return isWhite ? whiteQueen : blackQueen;
-      case chess_lib.PieceType.ROOK:
-        return isWhite ? whiteRook : blackRook;
-      case chess_lib.PieceType.BISHOP:
-        return isWhite ? whiteBishop : blackBishop;
-      case chess_lib.PieceType.KNIGHT:
-        return isWhite ? whiteKnight : blackKnight;
-      case chess_lib.PieceType.PAWN:
-        return isWhite ? whitePawn : blackPawn;
-      default:
-        return '';
-    }
-  }
-
-  /// ASCII mode alternatives
-  static const Map<String, String> asciiPieces = {
-    '♔': 'K',
-    '♕': 'Q',
-    '♖': 'R',
-    '♗': 'B',
-    '♘': 'N',
-    '♙': 'P',
-    '♚': 'k',
-    '♛': 'q',
-    '♜': 'r',
-    '♝': 'b',
-    '♞': 'n',
-    '♟': 'p',
-  };
-}
-
 /// Game controller that manages chess position and move history
+/// Uses chess package for logic, flutter_chess_board for display
 class ChessGameController {
   final chess_lib.Chess _chess = chess_lib.Chess();
   final List<String> _moveHistory = [];
-  int _currentMoveIndex = -1; // -1 = starting position
+  int _currentMoveIndex = -1;
   String? _lastMoveFrom;
   String? _lastMoveTo;
 
@@ -102,7 +32,7 @@ class ChessGameController {
       // Pre-process PGN to handle Chess.com format
       String cleanedPgn = _preprocessPgn(pgn);
 
-      // Parse the PGN
+      // Parse the PGN using the chess package (YOUR WORKING CODE)
       if (!_chess.load_pgn(cleanedPgn)) {
         return false;
       }
@@ -119,34 +49,68 @@ class ChessGameController {
 
       return true;
     } catch (e) {
+      print('PGN Load Error: $e');
       return false;
     }
   }
 
   /// Pre-process PGN to handle various formats (Chess.com, Lichess, etc.)
   String _preprocessPgn(String pgn) {
-    // Remove clock annotations {[%clk ...]}
-    String cleaned = pgn.replaceAll(RegExp(r'\{[^}]*\}'), '');
+    // Normalize line endings and collapse weird whitespace
+    String cleaned = pgn.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
-    // Remove eval annotations like [%eval ...]
+    // Strip BOM and trim
+    cleaned = cleaned.replaceAll('\ufeff', '').trim();
+
+    // Remove clock annotations {[%clk ...]} and any comments in braces
+    cleaned = cleaned.replaceAll(RegExp(r'\{[^}]*\}'), '');
+    // Remove any unmatched '{' to end-of-string (truncated annotations)
+    cleaned = cleaned.replaceAll(RegExp(r'\{[^}]*$'), '');
+
+    // Remove eval annotations like [%eval ...] and other bracketed inline commands
     cleaned = cleaned.replaceAll(RegExp(r'\[%[^\]]*\]'), '');
+    // Remove any unmatched '[%' to end-of-string
+    cleaned = cleaned.replaceAll(RegExp(r'\[%[^\]]*$'), '');
+    // Remove numeric annotation glyphs (NAGs) like $12
+    cleaned = cleaned.replaceAll(RegExp(r'\$\d+'), '');
 
-    // Fix Chess.com's "1... e5" notation - the library expects "1. e4 e5" format
-    // Replace "N..." with just the move (remove the redundant move number for black)
+    // Fix Chess.com's "1... e5" notation - remove the redundant "..." move numbers
     cleaned = cleaned.replaceAll(RegExp(r'\d+\.\.\.\s*'), '');
 
-    // Split into header and moves sections
-    // Find the first move number pattern to separate headers from moves
-    final moveStartMatch = RegExp(r'\n\s*1\.\s').firstMatch(cleaned);
+    // Remove move variations in parentheses (e.g., (1... Nf6 2. ...)) to simplify parsing
+    cleaned = cleaned.replaceAll(RegExp(r'\([^)]*\)'), '');
+    // Remove any unmatched '(' to end-of-string
+    cleaned = cleaned.replaceAll(RegExp(r'\([^)]*$'), '');
+
+    // Attempt 1: find move section by newline then 1.
+    var moveStartMatch = RegExp(r'\n\s*1\.\s').firstMatch(cleaned);
+
+    if (moveStartMatch == null) {
+      // Attempt 2: find first occurrence of '1.' anywhere (no newline required)
+      moveStartMatch = RegExp(r'1\.\s').firstMatch(cleaned);
+    }
+
     if (moveStartMatch != null) {
       final moveStart = moveStartMatch.start;
       var headers = cleaned.substring(0, moveStart);
       var moves = cleaned.substring(moveStart);
 
-      // Replace newlines with spaces in moves section only
+      // Normalize whitespace in moves: replace any sequence of whitespace with single space
       moves = moves.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-      cleaned = '$headers\n\n$moves';
+      cleaned = '${headers.trim()}\n\n${moves.trim()}';
+      return cleaned.trim();
+    }
+
+    // Final fallback: if no '1.' found, try extracting after last header bracket
+    final lastBracket = cleaned.lastIndexOf(']');
+    if (lastBracket != -1 && lastBracket + 1 < cleaned.length) {
+      var headers = cleaned.substring(0, lastBracket + 1);
+      var movesSection = cleaned.substring(lastBracket + 1);
+      movesSection = movesSection.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (movesSection.isNotEmpty) {
+        cleaned = '${headers.trim()}\n\n${movesSection.trim()}';
+      }
     }
 
     return cleaned.trim();
@@ -213,37 +177,23 @@ class ChessGameController {
   /// Can go forward?
   bool get canGoForward => _currentMoveIndex < _moveHistory.length - 1;
 
-  /// Get piece at square (e.g., "e4")
-  String getPieceAt(String square) {
-    final piece = _chess.get(square);
-    return ChessPieces.fromChessPiece(piece);
-  }
+  /// Whose turn is it?
+  bool get isWhiteToMove => _chess.turn == chess_lib.Color.WHITE;
 
-  /// Get piece at row/col (row 0 = rank 8, col 0 = file a)
-  String getPieceAtRowCol(int row, int col) {
-    final file = String.fromCharCode('a'.codeUnitAt(0) + col);
-    final rank = (8 - row).toString();
-    return getPieceAt('$file$rank');
-  }
+  /// Get the FEN of current position
+  String get fen => _chess.fen;
 
   /// Get last move from square
   String? get lastMoveFrom => _lastMoveFrom;
 
   /// Get last move to square
   String? get lastMoveTo => _lastMoveTo;
-
-  /// Whose turn is it?
-  bool get isWhiteToMove => _chess.turn == chess_lib.Color.WHITE;
-
-  /// Get the FEN of current position
-  String get fen => _chess.fen;
 }
 
-/// Interactive chess board panel with move navigation
+/// Interactive chess board panel with professional rendering
 class InteractiveChessBoardPanel extends StatefulWidget {
   final ChessGameController controller;
   final double boardSize;
-  final bool asciiMode;
   final bool flipped;
   final VoidCallback? onPositionChanged;
 
@@ -251,7 +201,6 @@ class InteractiveChessBoardPanel extends StatefulWidget {
     super.key,
     required this.controller,
     this.boardSize = 320,
-    this.asciiMode = false,
     this.flipped = false,
     this.onPositionChanged,
   });
@@ -263,38 +212,59 @@ class InteractiveChessBoardPanel extends StatefulWidget {
 
 class _InteractiveChessBoardPanelState
     extends State<InteractiveChessBoardPanel> {
+  late ChessBoardController _boardController;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create a fresh board controller
+    _boardController = ChessBoardController();
+  }
+
+  @override
+  void didUpdateWidget(InteractiveChessBoardPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Update board position when controller changes
+    _updateBoardPosition();
+  }
+
+  void _updateBoardPosition() {
+    // Update the visual board to match the game controller's FEN
+    final fen = widget.controller.fen;
+    _boardController.loadFen(fen);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Sync board position
+    _updateBoardPosition();
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Coordinate labels + Board
-        _buildBoardWithCoordinates(),
+        _buildBoardWithFrame(),
         const SizedBox(height: 8),
-        // Navigation buttons
         _buildNavigationButtons(),
         const SizedBox(height: 4),
-        // Move counter and turn indicator
         _buildMoveInfo(),
       ],
     );
   }
 
-  Widget _buildBoardWithCoordinates() {
-    // Industry standard chess board with clean border
+  Widget _buildBoardWithFrame() {
     return Container(
       decoration: BoxDecoration(
-        color: ChessBoardColors.boardBorder,
+        color: ui.Color(0xFF312E2B),
         borderRadius: BorderRadius.circular(4),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x30000000),
+            color: ui.Color(0x30000000),
             blurRadius: 8,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.all(4),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(2),
         child: _buildBoard(),
@@ -303,153 +273,19 @@ class _InteractiveChessBoardPanelState
   }
 
   Widget _buildBoard() {
-    final squareSize = widget.boardSize / 8;
-
     return SizedBox(
       width: widget.boardSize,
       height: widget.boardSize,
-      child: Column(
-        children: List.generate(8, (row) {
-          final actualRow = widget.flipped ? (7 - row) : row;
-          return Row(
-            children: List.generate(8, (col) {
-              final actualCol = widget.flipped ? (7 - col) : col;
-              return _buildSquare(actualRow, actualCol, squareSize, row, col);
-            }),
-          );
-        }),
+      child: ChessBoard(
+        controller: _boardController,
+        boardColor: BoardColor.green,
+        boardOrientation: widget.flipped
+            ? PlayerColor.black
+            : PlayerColor.white,
+        enableUserMoves: true, 
+        
       ),
     );
-  }
-
-  Widget _buildSquare(
-    int row,
-    int col,
-    double size,
-    int displayRow,
-    int displayCol,
-  ) {
-    final isLight = (row + col) % 2 == 0;
-    final piece = widget.controller.getPieceAtRowCol(row, col);
-    final squareName = _getSquareName(row, col);
-
-    // Check if this square is highlighted (last move)
-    final isLastMoveFrom = squareName == widget.controller.lastMoveFrom;
-    final isLastMoveTo = squareName == widget.controller.lastMoveTo;
-    final isHighlighted = isLastMoveFrom || isLastMoveTo;
-
-    // Standard Chess.com colors
-    Color baseColor = isLight
-        ? ChessBoardColors.lightSquare
-        : ChessBoardColors.darkSquare;
-    if (isHighlighted) {
-      baseColor = isLight
-          ? ChessBoardColors.lastMoveLight
-          : ChessBoardColors.lastMoveDark;
-    }
-
-    // Determine if we should show coordinates
-    final showRank = displayCol == 0; // Left edge
-    final showFile = displayRow == 7; // Bottom edge
-
-    final rankNum = widget.flipped ? (displayRow + 1) : (8 - displayRow);
-    final fileChar = String.fromCharCode(
-      'a'.codeUnitAt(0) + (widget.flipped ? (7 - displayCol) : displayCol),
-    );
-
-    final coordColor = isLight
-        ? ChessBoardColors.coordOnLight
-        : ChessBoardColors.coordOnDark;
-
-    return Container(
-      width: size,
-      height: size,
-      color: baseColor,
-      child: Stack(
-        children: [
-          // Rank coordinate (left edge, top-left of square)
-          if (showRank)
-            Positioned(
-              top: 1,
-              left: 2,
-              child: Text(
-                '$rankNum',
-                style: TextStyle(
-                  fontSize: size * 0.2,
-                  fontWeight: FontWeight.w700,
-                  color: coordColor,
-                  height: 1.0,
-                ),
-              ),
-            ),
-          // File coordinate (bottom edge, bottom-right of square)
-          if (showFile)
-            Positioned(
-              bottom: 1,
-              right: 2,
-              child: Text(
-                fileChar,
-                style: TextStyle(
-                  fontSize: size * 0.2,
-                  fontWeight: FontWeight.w700,
-                  color: coordColor,
-                  height: 1.0,
-                ),
-              ),
-            ),
-          // Chess piece - centered
-          Center(child: _buildPiece(piece, size)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPiece(String piece, double size) {
-    if (piece.isEmpty) return const SizedBox.shrink();
-
-    final isWhite = _isWhitePiece(piece);
-
-    // Industry standard piece rendering
-    // White pieces: white fill with thin black outline
-    // Black pieces: black fill
-    return Text(
-      piece,
-      style: TextStyle(
-        fontSize: size * 0.82,
-        height: 1.0,
-        color: isWhite ? const Color(0xFFFFFFFF) : const Color(0xFF000000),
-        shadows: isWhite
-            ? const [
-                // Multiple shadows to create outline effect for white pieces
-                Shadow(offset: Offset(-1, -1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(1, -1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(-1, 1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(1, 1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(0, -1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(0, 1), color: Color(0xFF000000)),
-                Shadow(offset: Offset(-1, 0), color: Color(0xFF000000)),
-                Shadow(offset: Offset(1, 0), color: Color(0xFF000000)),
-              ]
-            : const [
-                // Subtle shadow for black pieces
-                Shadow(
-                  offset: Offset(1, 1),
-                  blurRadius: 1,
-                  color: Color(0x40000000),
-                ),
-              ],
-      ),
-    );
-  }
-
-  String _getSquareName(int row, int col) {
-    final file = String.fromCharCode('a'.codeUnitAt(0) + col);
-    final rank = (8 - row).toString();
-    return '$file$rank';
-  }
-
-  bool _isWhitePiece(String piece) {
-    return ['♔', '♕', '♖', '♗', '♘', '♙'].contains(piece);
   }
 
   Widget _buildNavigationButtons() {
@@ -528,33 +364,5 @@ class _InteractiveChessBoardPanelState
       widget.controller.goToEnd();
     });
     widget.onPositionChanged?.call();
-  }
-}
-
-/// Legacy ChessPosition class for compatibility
-class ChessPosition {
-  final List<List<String>> board;
-  final bool whiteToMove;
-
-  const ChessPosition({required this.board, this.whiteToMove = true});
-
-  factory ChessPosition.initial() {
-    return ChessPosition(
-      board: [
-        ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
-        ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
-        ['', '', '', '', '', '', '', ''],
-        ['', '', '', '', '', '', '', ''],
-        ['', '', '', '', '', '', '', ''],
-        ['', '', '', '', '', '', '', ''],
-        ['♙', '♙', '♙', '♙', '♙', '♙', '♙', '♙'],
-        ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
-      ],
-      whiteToMove: true,
-    );
-  }
-
-  factory ChessPosition.empty() {
-    return ChessPosition(board: List.generate(8, (_) => List.filled(8, '')));
   }
 }

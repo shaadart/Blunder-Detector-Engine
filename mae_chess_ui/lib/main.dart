@@ -97,7 +97,7 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
       child: Container(
-        color: const Color(0xFF008080), // Classic teal desktop
+        color: const Color.fromARGB(255, 0, 136, 247), // Classic teal desktop
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -196,7 +196,8 @@ class _RetroChessAnalyzerState extends State<RetroChessAnalyzer> {
                 child: RetroPanel(
                   child: InteractiveChessBoardPanel(
                     controller: _boardController,
-                    boardSize: 300, // Slightly smaller to fit
+                    boardSize: 300,
+                    flipped: _gameProfile != null && _gameProfile!.playerColor.toLowerCase() == 'black',
                     onPositionChanged: _onBoardPositionChanged,
                   ),
                 ),
