@@ -28,15 +28,14 @@ Paste your PGN. Get instant feedback on every blunder, mistake, and inaccuracy. 
 
 ---
 
-## ✨ Features
+##  Features
 
 | Feature | Description |
 |---------|-------------|
 | **Deep Analysis** | Stockfish 16 evaluates every move |
 | **Move Classification** | Blunders • Mistakes • Inaccuracies |
 | **Chess Tutor** | Real-time explanations with best move suggestions |
-| **Full Move Table** | All moves with piece symbols (♔♕♖♗♘♙) |
-| **Retro Vibes** | Windows 95 aesthetic, because nostalgia |
+| **Retro Design** | Windows 95 aesthetic, because nostalgia |
 
 ---
 
