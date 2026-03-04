@@ -1,4 +1,4 @@
-<img width="1172" height="848" alt="image" src="https://github.com/user-attachments/assets/87219ed9-7d31-4b30-aea0-f0eae81e30e6" />
+<img width="1197" height="868" alt="Screenshot from 2026-01-21 22-28-04" src="https://github.com/user-attachments/assets/acb08b0d-1a47-45af-91ba-83a08cc022c2" />
 
 
 <p align="center">
@@ -66,6 +66,9 @@ flutter run -d chrome --web-port=8080
 3. Use **← →** arrows to navigate
 4. Learn from your mistakes
 
+<img width="593" height="430" alt="Screenshot from 2026-01-22 00-31-27" src="https://github.com/user-attachments/assets/c755eb4e-bba8-45b1-a1aa-d1d3e7a4b54a" />
+
+
 ---
 
 ## Controls
@@ -96,9 +99,6 @@ Stockfish 16           Chess Engine
 ---
 
 ##  Aesthetics
-
-<img width="677" height="490" alt="image" src="https://github.com/user-attachments/assets/97c109b8-871c-4a74-8158-99aeb24243f7" />
-
 
 > *"The Windows 95 UI makes losing at chess feel nostalgic."*
 
